@@ -1002,7 +1002,12 @@ button {
 }
 
 .hotspot-layer-semantic {
+  left: 50%;
+  top: 50%;
+  width: max(100%, calc(100svh * 21 / 9));
+  height: max(100%, calc(100vw * 9 / 21));
   z-index: 8;
+  transform: translate(-50%, -50%);
 }
 
 .hotspot {

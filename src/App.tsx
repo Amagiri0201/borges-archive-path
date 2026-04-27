@@ -11,7 +11,7 @@ import {
   type SpatialSpineActor,
   type SpatialTermActor,
 } from './data/spatialActors'
-import { getThoughtEcho, voiceLabels } from './data/thoughts'
+import { getThoughtEcho, voiceLabels, type ThoughtPrompt } from './data/thoughts'
 
 type GuideState = {
   chapter: Chapter
@@ -27,6 +27,102 @@ const travelDuration = 1550
 const settleDuration = 780
 const thoughtSwapOutDuration = 420
 const thoughtSwapInDuration = 960
+
+const thoughtPromptLabelsByChapter: Record<string, Partial<Record<string, string>>> = {
+  'archive-entry': {
+    motif: '这个入口真正打开什么？',
+    evidence: '它凭什么不是空设定？',
+  },
+  'city-memory': {
+    motif: '城市为什么会记忆？',
+    evidence: '哪条街通向文本？',
+  },
+  'library-life': {
+    motif: '图书馆为什么像命运？',
+    evidence: '生平怎么压进书架？',
+  },
+  'forking-paths': {
+    motif: '如果不选会怎样？',
+    evidence: '小说结构在哪里？',
+  },
+  'mirror-dream': {
+    motif: '镜子哪里危险？',
+    evidence: '梦和身份怎么接上？',
+  },
+  'circular-ruins': {
+    motif: '谁在梦见谁？',
+    evidence: '结尾为何反咬？',
+  },
+  aleph: {
+    motif: '看见全部为何崩溃？',
+    evidence: '这个光点连向哪里？',
+  },
+  'book-of-sand': {
+    motif: '书为什么不能拥有？',
+    evidence: '碎片如何成为路径？',
+  },
+  'method-archive': {
+    motif: '方法藏在哪里？',
+    evidence: '资料如何撑住视觉？',
+  },
+}
+
+const readerPromptsByChapter: Record<string, ThoughtPrompt> = {
+  'archive-entry': {
+    id: 'reader',
+    label: '我先进入哪一层？',
+    reply:
+      '先不要急着找“正确顺序”。从入口开始，你要做的是把人物、作品和证据看成同一座档案的三层墙面。',
+  },
+  'city-memory': {
+    id: 'reader',
+    label: '我在城市里找什么？',
+    reply:
+      '找那些不像景点的地方：街角、边缘、回返的路线。博尔赫斯的城市不是地图导览，而是记忆反复折回的痕迹。',
+  },
+  'library-life': {
+    id: 'reader',
+    label: '失明以后怎么读？',
+    reply:
+      '读法会从眼睛退到声音、记忆和想象里。正因为看不见，图书馆才从一排书架变成一种更巨大的精神结构。',
+  },
+  'forking-paths': {
+    id: 'reader',
+    label: '我必须做选择吗？',
+    reply:
+      '必须。不是为了排除其他路径，而是为了让你意识到：任何被点亮的路线，都带着未被选择路线的阴影。',
+  },
+  'mirror-dream': {
+    id: 'reader',
+    label: '另一个我可信吗？',
+    reply:
+      '不太可信，但很有用。镜像里的“我”会把稳定身份拆开，让你看见作者、人物和读者之间并没有绝对边界。',
+  },
+  'circular-ruins': {
+    id: 'reader',
+    label: '我会不会也是梦？',
+    reply:
+      '这正是这一章的陷阱：当你开始怀疑被创造者是否真实，创造者本身也会被同一个问题反过来照亮。',
+  },
+  aleph: {
+    id: 'reader',
+    label: '我该盯着光点吗？',
+    reply:
+      '可以盯着，但不要相信自己能整理它。阿莱夫的力量不是给你答案，而是让“全部同时出现”这件事变得几乎不可承受。',
+  },
+  'book-of-sand': {
+    id: 'reader',
+    label: '我要收集多少页？',
+    reply:
+      '不用收集完。无限文本最诚实的读法，就是承认自己只能带走碎片；碎片会组成你的路径，而不是组成整本书。',
+  },
+  'method-archive': {
+    id: 'reader',
+    label: '证据先看哪里？',
+    reply:
+      '先看年份、作品和来源能不能彼此对上。视觉可以很锋利，但数字人文最后还是要让每个漂亮节点都能被追溯。',
+  },
+}
 
 const alephParticles = Array.from({ length: 12 }, (_, index) => {
   const angle = (index / 12) * Math.PI * 2
@@ -80,6 +176,10 @@ function getHotspot(chapter: Chapter, id: string) {
 
 function getGuideKey(guide: GuideState) {
   return guide ? `${guide.chapter.id}:${guide.hotspot.id}` : ''
+}
+
+function getThoughtPromptLabel(chapterId: string, prompt: ThoughtPrompt) {
+  return thoughtPromptLabelsByChapter[chapterId]?.[prompt.id] ?? prompt.label
 }
 
 function actorsOfType<T extends SpatialActor['type']>(
@@ -323,48 +423,44 @@ function SemanticActorLayer({
 
 function TypewriterText({
   className,
-  isActive,
   text,
 }: {
   className: string
-  isActive: boolean
   text: string
 }) {
-  const [displayText, setDisplayText] = useState(isActive ? '' : text)
+  const [displayText, setDisplayText] = useState('')
 
   useEffect(() => {
     const characters = Array.from(text)
 
-    if (!isActive || characters.length === 0) {
-      const instantTimer = window.setTimeout(() => setDisplayText(text), 0)
-
-      return () => {
-        window.clearTimeout(instantTimer)
-      }
-    }
-
     let index = 0
     let typingTimer: number | null = null
-    const startTimer = window.setTimeout(() => {
+    let startTimer: number | null = null
+    const resetTimer = window.setTimeout(() => {
       setDisplayText('')
 
-      typingTimer = window.setInterval(() => {
-        index += 1
-        setDisplayText(characters.slice(0, index).join(''))
+      if (characters.length === 0) return
 
-        if (index >= characters.length && typingTimer) {
-          window.clearInterval(typingTimer)
-        }
-      }, 42)
+      startTimer = window.setTimeout(() => {
+        typingTimer = window.setInterval(() => {
+          index += 1
+          setDisplayText(characters.slice(0, index).join(''))
+
+          if (index >= characters.length && typingTimer) {
+            window.clearInterval(typingTimer)
+          }
+        }, 58)
+      }, 180)
     }, 0)
 
     return () => {
-      window.clearTimeout(startTimer)
+      window.clearTimeout(resetTimer)
+      if (startTimer) window.clearTimeout(startTimer)
       if (typingTimer) window.clearInterval(typingTimer)
     }
-  }, [isActive, text])
+  }, [text])
 
-  const isTyping = isActive && displayText.length < Array.from(text).length
+  const isTyping = Array.from(displayText).length < Array.from(text).length
 
   return (
     <p className={`${className} ${isTyping ? 'is-typing' : 'is-typed'}`} aria-label={text}>
@@ -553,16 +649,20 @@ function App() {
   const currentThought = guide ? getThoughtEcho(guide.chapter.id, guide.hotspot.id) : null
   const currentThoughtVoice = currentThought ? voiceLabels[currentThought.voice] : '档案回声'
   const currentThoughtTitle = currentThought?.title ?? guide?.hotspot.label ?? ''
-  const currentThoughtPrompts = currentThought?.prompts ?? []
+  const currentThoughtPrompts = [
+    ...(currentThought?.prompts ?? []),
+    ...(guide && readerPromptsByChapter[guide.chapter.id] ? [readerPromptsByChapter[guide.chapter.id]] : []),
+  ]
   const activeThoughtPrompt =
     currentThoughtPrompts.find((prompt) => prompt.id === activeThoughtPromptId) ?? null
+  const activeThoughtPromptLabel =
+    guide && activeThoughtPrompt ? getThoughtPromptLabel(guide.chapter.id, activeThoughtPrompt) : ''
   const currentThoughtText = activeThoughtPrompt?.reply ?? currentThought?.text ?? guide?.hotspot.text ?? ''
   const currentThoughtMotif = currentThought?.motif ?? guide?.chapter.motif ?? ''
   const currentThoughtTag = currentThoughtMotif.split('/')[0]?.trim() || currentThoughtVoice
   const currentThoughtEvidence = currentThought?.evidence ?? guide?.hotspot.source ?? ''
   const currentGuideKey = getGuideKey(guide)
   const currentThoughtLineKey = `${currentGuideKey}:${activeThoughtPromptId ?? 'opening'}`
-  const isThoughtEntering = thoughtSwapPhase === 'in'
 
   return (
     <main
@@ -767,12 +867,11 @@ function App() {
             {activeThoughtPrompt ? (
               <div className="thought-question-line">
                 <span>你问</span>
-                <strong>{activeThoughtPrompt.label}</strong>
+                <strong>{activeThoughtPromptLabel}</strong>
               </div>
             ) : null}
             <TypewriterText
               className="thought-line"
-              isActive={isThoughtEntering}
               key={currentThoughtLineKey}
               text={currentThoughtText}
             />
@@ -786,7 +885,7 @@ function App() {
                     onClick={() => selectThoughtPrompt(prompt.id)}
                     aria-pressed={activeThoughtPromptId === prompt.id}
                   >
-                    <span>{prompt.label}</span>
+                    <span>{guide ? getThoughtPromptLabel(guide.chapter.id, prompt) : prompt.label}</span>
                   </button>
                 ))}
                 {activeThoughtPrompt ? (

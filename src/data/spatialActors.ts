@@ -160,8 +160,8 @@ export const spatialActors: Record<string, SpatialActor[]> = {
       id: 'aleph-core-light',
       hotspotId: 'aleph-core',
       label: '中心光点',
-      x: 74.2,
-      y: 50.4,
+      x: 73.6,
+      y: 50.6,
     },
     {
       type: 'term',
