@@ -19,14 +19,15 @@ type GuideState = {
 } | null
 
 type TransitionPhase = 'idle' | 'fading' | 'traveling' | 'settling'
-type ThoughtSwapPhase = 'idle' | 'out' | 'in'
+type ThoughtSwapPhase = 'idle' | 'out' | 'in' | 'closing'
 
 const mapColumns = 3
-const fadeDuration = 560
-const travelDuration = 1550
-const settleDuration = 780
-const thoughtSwapOutDuration = 420
-const thoughtSwapInDuration = 960
+const fadeDuration = 640
+const travelDuration = 1780
+const settleDuration = 1540
+const thoughtSwapOutDuration = 520
+const thoughtSwapInDuration = 1120
+const thoughtCloseDuration = 760
 
 const thoughtPromptLabelsByChapter: Record<string, Partial<Record<string, string>>> = {
   'archive-entry': {
@@ -610,12 +611,12 @@ function App() {
     if (!guide) return
 
     clearGuideTimers()
-    setThoughtSwapPhase('out')
+    setThoughtSwapPhase('closing')
     guideSwapTimerRef.current = window.setTimeout(() => {
       setGuide(null)
       setActiveThoughtPromptId(null)
       setThoughtSwapPhase('idle')
-    }, thoughtSwapOutDuration)
+    }, thoughtCloseDuration)
   }
 
   function selectThoughtPrompt(promptId: string | null) {

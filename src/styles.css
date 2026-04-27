@@ -46,15 +46,15 @@ button {
 }
 
 .app-shell.transition-fading {
-  --map-scale: 0.94;
+  --map-scale: 0.9;
 }
 
 .app-shell.transition-traveling {
-  --map-scale: 0.89;
+  --map-scale: 0.84;
 }
 
 .app-shell.transition-settling {
-  --map-scale: 1.018;
+  --map-scale: 1;
 }
 
 .app-shell::before {
@@ -71,14 +71,32 @@ button {
   transition: opacity 640ms ease;
 }
 
+.app-shell::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(100deg, transparent 0 42%, rgba(215, 183, 100, 0.13) 49%, transparent 56%),
+    radial-gradient(ellipse at 50% 50%, transparent 0 48%, rgba(5, 6, 9, 0.24) 76%, rgba(5, 6, 9, 0.72) 100%);
+  mix-blend-mode: screen;
+  transform: translate3d(-10%, 0, 0);
+}
+
 .app-shell.transition-fading::before,
 .app-shell.transition-traveling::before {
   opacity: 0.74;
 }
 
 .app-shell.transition-settling::before {
-  opacity: 0.18;
-  transition-duration: 860ms;
+  opacity: 0.12;
+  transition-duration: 1180ms;
+}
+
+.app-shell.transition-traveling::after {
+  animation: transitSweep 1780ms var(--ease-map) both;
 }
 
 .spatial-map-viewport {
@@ -98,16 +116,31 @@ button {
   pointer-events: none;
   opacity: 0;
   background:
-    radial-gradient(ellipse at 50% 50%, transparent 0 45%, rgba(5, 6, 9, 0.24) 68%, rgba(5, 6, 9, 0.78) 100%),
-    linear-gradient(90deg, rgba(5, 6, 9, 0.68), transparent 18%, transparent 82%, rgba(5, 6, 9, 0.68)),
-    linear-gradient(180deg, rgba(5, 6, 9, 0.62), transparent 20%, transparent 80%, rgba(5, 6, 9, 0.7));
+    radial-gradient(ellipse at 50% 50%, transparent 0 36%, rgba(5, 6, 9, 0.34) 58%, rgba(5, 6, 9, 0.9) 100%),
+    linear-gradient(90deg, rgba(5, 6, 9, 0.82), transparent 23%, transparent 77%, rgba(5, 6, 9, 0.82)),
+    linear-gradient(180deg, rgba(5, 6, 9, 0.78), transparent 24%, transparent 76%, rgba(5, 6, 9, 0.86));
   box-shadow:
     inset 0 0 96px rgba(5, 6, 9, 0.68),
     inset 0 0 180px rgba(5, 6, 9, 0.34);
-  backdrop-filter: blur(5px) brightness(0.84);
-  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 0 50%, rgba(0, 0, 0, 0.3) 63%, #000 100%);
-  mask-image: radial-gradient(ellipse at 50% 50%, transparent 0 50%, rgba(0, 0, 0, 0.3) 63%, #000 100%);
+  backdrop-filter: blur(6px) brightness(0.8);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 0 42%, rgba(0, 0, 0, 0.55) 60%, #000 100%);
+  mask-image: radial-gradient(ellipse at 50% 50%, transparent 0 42%, rgba(0, 0, 0, 0.55) 60%, #000 100%);
   transition: opacity 760ms ease;
+}
+
+.spatial-map-viewport::before {
+  content: "";
+  position: absolute;
+  inset: -14vmax;
+  z-index: 11;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 50%, transparent 0 31%, rgba(3, 3, 3, 0.18) 44%, rgba(3, 3, 3, 0.92) 76%, #030303 100%),
+    linear-gradient(90deg, #030303 0 12%, transparent 28%, transparent 72%, #030303 88% 100%),
+    linear-gradient(180deg, #030303 0 12%, transparent 30%, transparent 70%, #030303 88% 100%);
+  transform: scale(1.08);
+  transition: opacity 900ms ease;
 }
 
 .app-shell.transition-fading .spatial-map-viewport::after,
@@ -115,9 +148,19 @@ button {
   opacity: 1;
 }
 
+.app-shell.transition-fading .spatial-map-viewport::before,
+.app-shell.transition-traveling .spatial-map-viewport::before {
+  opacity: 0.96;
+}
+
 .app-shell.transition-settling .spatial-map-viewport::after {
-  opacity: 0.28;
-  transition-duration: 860ms;
+  opacity: 0;
+  transition-duration: 1180ms;
+}
+
+.app-shell.transition-settling .spatial-map-viewport::before {
+  opacity: 0;
+  transition-duration: 1320ms;
 }
 
 .spatial-map {
@@ -141,23 +184,23 @@ button {
 
 .app-shell.transition-fading .spatial-map {
   filter: saturate(0.78) contrast(0.92) brightness(0.72) blur(0.8px);
-  transition-duration: 560ms;
+  transition-duration: 640ms;
 }
 
 .app-shell.transition-traveling .spatial-map {
-  filter: saturate(0.72) contrast(0.92) brightness(0.66) blur(1.65px);
+  filter: saturate(0.7) contrast(0.9) brightness(0.62) blur(1.5px);
   transition:
-    transform 1550ms var(--ease-map),
-    transform-origin 1550ms var(--ease-map),
-    filter 900ms ease;
+    transform 1780ms var(--ease-map),
+    transform-origin 1780ms var(--ease-map),
+    filter 1040ms ease;
 }
 
 .app-shell.transition-settling .spatial-map {
-  filter: saturate(1.06) contrast(1.05) brightness(1) blur(0.18px);
+  filter: saturate(1.04) contrast(1.04) brightness(1) blur(0);
   transition:
-    transform 780ms var(--ease-archive),
-    transform-origin 780ms var(--ease-archive),
-    filter 780ms ease;
+    transform 1180ms var(--ease-archive),
+    transform-origin 1180ms var(--ease-archive),
+    filter 1180ms ease;
 }
 
 .map-cell {
@@ -179,7 +222,9 @@ button {
 .chapter-dossier,
 .hud-next,
 .path-status {
-  transition: opacity 860ms ease;
+  transition:
+    opacity 960ms ease,
+    transform 960ms var(--ease-archive);
 }
 
 .semantic-actor-layer,
@@ -188,7 +233,7 @@ button {
 .collection-panel,
 .source-wall,
 .thought-panel {
-  transition: opacity 760ms ease;
+  transition: opacity 980ms ease;
 }
 
 .app-shell.transition-fading .chapter-rail,
@@ -237,7 +282,8 @@ button {
 .app-shell.transition-settling .hud-next,
 .app-shell.transition-settling .path-status {
   opacity: 1;
-  transition-duration: 1120ms;
+  transition-duration: 1180ms;
+  transition-delay: 360ms;
 }
 
 .app-shell.transition-settling .semantic-actor-layer,
@@ -247,7 +293,21 @@ button {
 .app-shell.transition-settling .source-wall,
 .app-shell.transition-settling .thought-panel {
   opacity: 1;
-  transition-duration: 1040ms;
+  transition-duration: 1160ms;
+  transition-delay: 520ms;
+}
+
+.app-shell.transition-settling .chapter-rail {
+  animation: railSettleIn 1180ms var(--ease-archive) 360ms both;
+}
+
+.app-shell.transition-settling .chapter-dossier {
+  animation: dossierSettleIn 1180ms var(--ease-archive) 460ms both;
+}
+
+.app-shell.transition-settling .hud-next,
+.app-shell.transition-settling .path-status {
+  animation: hudSettleIn 1040ms var(--ease-archive) 620ms both;
 }
 
 .ambient-grain {
@@ -1730,6 +1790,25 @@ button {
   transform: translate3d(12px, 0, 0);
 }
 
+.thought-closing {
+  pointer-events: none;
+  animation: thoughtPanelClose 760ms var(--ease-quiet) both;
+}
+
+.thought-closing::before {
+  animation: thoughtPatternClose 760ms var(--ease-quiet) both;
+}
+
+.thought-closing .thought-portrait {
+  animation: thoughtPortraitClose 760ms var(--ease-quiet) both;
+}
+
+.thought-closing .thought-body {
+  opacity: 0;
+  transform: translate3d(16px, -2px, 0);
+  transition-duration: 680ms;
+}
+
 .thought-in .thought-body,
 .thought-idle .thought-body {
   opacity: 1;
@@ -2116,6 +2195,53 @@ button {
   }
 }
 
+@keyframes transitSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-22%, 0, 0);
+  }
+  36% {
+    opacity: 0.32;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(18%, 0, 0);
+  }
+}
+
+@keyframes railSettleIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(-50%, -14px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes dossierSettleIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(-22px, 10px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hudSettleIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 @keyframes backgroundHold {
   from {
     transform: scale(1.024);
@@ -2237,6 +2363,28 @@ button {
   }
 }
 
+@keyframes thoughtPanelClose {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(14px, -8px, 0) scale(0.982);
+  }
+}
+
+@keyframes thoughtPortraitClose {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-12px, -8px, 0) scale(0.97) rotate(-0.6deg);
+  }
+}
+
 @keyframes thoughtActionIn {
   0% {
     opacity: 0;
@@ -2262,6 +2410,17 @@ button {
   100% {
     opacity: 0.46;
     transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes thoughtPatternClose {
+  0% {
+    opacity: 0.46;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(8px, -2px, 0) scale(0.992);
   }
 }
 
