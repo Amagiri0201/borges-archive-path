@@ -765,7 +765,7 @@ function App() {
                   className={`hotspot-layer ${hasSemanticActors(chapter.id) ? 'hotspot-layer-semantic' : ''}`}
                   aria-label={`${chapter.title} 热点`}
                 >
-                  {chapter.hotspots.map((hotspot) => (
+                  {chapter.hotspots.map((hotspot, hotspotIndex) => (
                     <button
                       className={`hotspot ${hotspot.collectable ? 'is-collectable' : ''}`}
                       key={hotspot.id}
@@ -773,7 +773,8 @@ function App() {
                       style={{
                         left: `${hotspot.x}%`,
                         top: `${hotspot.y}%`,
-                      }}
+                        '--hotspot-index': hotspotIndex,
+                      } as CSSProperties}
                     >
                       <span className="hotspot-pulse" />
                       <span className="hotspot-core" />
