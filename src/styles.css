@@ -210,13 +210,17 @@ button {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  opacity: 0.72;
+  opacity: 0;
   mix-blend-mode: screen;
   transition: opacity 960ms ease;
 }
 
-.music-visualizer-canvas.is-on {
-  opacity: 0.96;
+.music-visualizer-canvas.is-visible {
+  opacity: 0.84;
+}
+
+.music-visualizer-canvas.is-visible.is-on {
+  opacity: 0.94;
 }
 
 .app-shell.transition-fading .music-visualizer-canvas,
@@ -921,6 +925,7 @@ button {
     conic-gradient(from 18deg, transparent 0deg, rgba(215, 183, 100, 0.11) 16deg, transparent 40deg, transparent 72deg, rgba(232, 220, 197, 0.08) 92deg, transparent 122deg);
   filter: blur(0.4px);
   mix-blend-mode: screen;
+  opacity: 0;
   transform: translate(-50%, -50%);
   animation: alephFieldBreathe 6.2s ease-in-out infinite;
 }
@@ -1116,18 +1121,18 @@ button {
 
 .sand-spine {
   position: absolute;
+  display: none;
   left: var(--actor-x);
   top: var(--actor-y);
   width: var(--spine-width, 34%);
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(215, 183, 100, 0.58), transparent) !important;
+  background: linear-gradient(90deg, transparent, rgba(215, 183, 100, 0.18), transparent) !important;
   opacity: 0;
   transform: translate(-50%, -50%) rotate(var(--spine-angle, 0deg));
 }
 
 .story-section.is-active .sand-spine {
-  animation: spineGlow 2600ms ease forwards;
-  animation-delay: 600ms;
+  animation: none;
 }
 
 .hotspot-layer {

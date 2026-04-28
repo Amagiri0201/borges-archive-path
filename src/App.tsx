@@ -46,17 +46,9 @@ const thoughtSwapInDuration = 1120
 const thoughtCloseDuration = 760
 const ambientMusicPath = '/audio/ambient.mp3'
 const musicBaseVolume = 0.2
+const audioVisualizerChapterId = 'aleph'
 const audioFocusByChapter: Record<string, { x: number; y: number; radius: number; stretch: number }> = {
-  'archive-entry': { x: 0.51, y: 0.49, radius: 0.22, stretch: 1.36 },
-  'city-memory': { x: 0.66, y: 0.52, radius: 0.25, stretch: 1.26 },
-  'library-life': { x: 0.51, y: 0.49, radius: 0.24, stretch: 1.36 },
-  'forking-paths': { x: 0.61, y: 0.64, radius: 0.29, stretch: 1.32 },
-  'mirror-dream': { x: 0.72, y: 0.47, radius: 0.24, stretch: 1.16 },
-  'circular-ruins': { x: 0.53, y: 0.54, radius: 0.25, stretch: 1.2 },
-  'method-archive': { x: 0.54, y: 0.52, radius: 0.24, stretch: 1.22 },
-  aleph: { x: 0.82, y: 0.51, radius: 0.27, stretch: 1.18 },
-  'book-of-sand': { x: 0.66, y: 0.46, radius: 0.26, stretch: 1.34 },
-  'reader-path': { x: 0.58, y: 0.52, radius: 0.23, stretch: 1.26 },
+  aleph: { x: 0.814, y: 0.506, radius: 0.27, stretch: 1.18 },
 }
 const audioConstellationNodes = Array.from({ length: 112 }, (_, index) => ({
   angle: (index / 112) * Math.PI * 2,
@@ -320,8 +312,6 @@ function AlephActorLayer({
 
   if (!core) return null
 
-  const coreHotspot = getHotspot(chapter, core.hotspotId)
-
   return (
     <div
       className="semantic-actor-layer aleph-actor-layer"
@@ -343,11 +333,6 @@ function AlephActorLayer({
           />
         ))}
       </div>
-      <button className="aleph-core-actor" onClick={() => onOpenGuide(chapter, coreHotspot)} aria-label={core.label}>
-        <span className="aleph-core-light" />
-        <span className="aleph-core-ring" />
-        <span className="aleph-core-ring ring-slow" />
-      </button>
       {terms.map((term) => (
         <button
           className="aleph-index-chip"
@@ -754,12 +739,18 @@ function App() {
       const mid = isMusicLive ? averageBand(18, 74) : 0.1 + idlePulse * 0.04
       const high = isMusicLive ? averageBand(74, frequencyData.length) : 0.075 + idlePulse * 0.028
       const energy = Math.min(1, (isMusicLive ? 0.16 : 0.06) + low * 0.48 + mid * 0.44 + high * 0.24)
-      const focus = audioFocusByChapter[activeIdRef.current] ?? audioFocusByChapter['archive-entry']
+      context.clearRect(0, 0, width, height)
+
+      if (activeIdRef.current !== audioVisualizerChapterId) {
+        musicVisualizerFrameRef.current = window.requestAnimationFrame(tick)
+        return
+      }
+
+      const focus = audioFocusByChapter[audioVisualizerChapterId]
       const cx = width * focus.x
       const cy = height * focus.y
       const baseRadius = Math.min(width, height) * focus.radius * (isMusicLive ? 0.9 : 0.82)
 
-      context.clearRect(0, 0, width, height)
       context.save()
       context.globalCompositeOperation = 'lighter'
       context.globalAlpha = (isMusicLive ? 0.74 : 0.62) + energy * (isMusicLive ? 0.48 : 0.24)
@@ -1532,7 +1523,9 @@ function App() {
           })}
         </div>
         <canvas
-          className={`music-visualizer-canvas ${isMusicEnabled ? 'is-on' : ''}`}
+          className={`music-visualizer-canvas ${activeId === audioVisualizerChapterId ? 'is-visible' : ''} ${
+            isMusicEnabled ? 'is-on' : ''
+          }`}
           ref={musicVisualizerCanvasRef}
           aria-hidden="true"
         />
