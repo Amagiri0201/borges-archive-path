@@ -46,6 +46,26 @@ const thoughtSwapInDuration = 1120
 const thoughtCloseDuration = 760
 const ambientMusicPath = '/audio/ambient.mp3'
 const musicBaseVolume = 0.2
+const audioFocusByChapter: Record<string, { x: number; y: number; radius: number; stretch: number }> = {
+  'archive-entry': { x: 0.51, y: 0.49, radius: 0.22, stretch: 1.36 },
+  'city-memory': { x: 0.66, y: 0.52, radius: 0.25, stretch: 1.26 },
+  'library-life': { x: 0.51, y: 0.49, radius: 0.24, stretch: 1.36 },
+  'forking-paths': { x: 0.61, y: 0.64, radius: 0.29, stretch: 1.32 },
+  'mirror-dream': { x: 0.72, y: 0.47, radius: 0.24, stretch: 1.16 },
+  'circular-ruins': { x: 0.53, y: 0.54, radius: 0.25, stretch: 1.2 },
+  'method-archive': { x: 0.54, y: 0.52, radius: 0.24, stretch: 1.22 },
+  aleph: { x: 0.82, y: 0.51, radius: 0.27, stretch: 1.18 },
+  'book-of-sand': { x: 0.66, y: 0.46, radius: 0.26, stretch: 1.34 },
+  'reader-path': { x: 0.58, y: 0.52, radius: 0.23, stretch: 1.26 },
+}
+const audioConstellationNodes = Array.from({ length: 112 }, (_, index) => ({
+  angle: (index / 112) * Math.PI * 2,
+  orbit: 0.38 + ((index * 17) % 72) / 100,
+  size: 0.45 + ((index * 7) % 10) / 10,
+  speed: 0.000012 + ((index * 13) % 18) * 0.0000008,
+  jitter: 2 + ((index * 19) % 12),
+  band: index % 3,
+}))
 
 const thoughtPromptLabelsByChapter: Record<string, Partial<Record<string, string>>> = {
   'archive-entry': {
@@ -525,7 +545,13 @@ function App() {
   const audioMasterRef = useRef<GainNode | null>(null)
   const ambientNodesRef = useRef<AmbientNodes | null>(null)
   const musicElementRef = useRef<HTMLAudioElement | null>(null)
+  const musicSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const musicAnalyserRef = useRef<AnalyserNode | null>(null)
+  const musicVisualizerFrameRef = useRef<number | null>(null)
+  const musicVisualizerCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const musicVisualizerSizeRef = useRef({ width: 0, height: 0 })
   const musicEnabledRef = useRef(false)
+  const activeIdRef = useRef(activeId)
 
   const activeChapter = useMemo(
     () => chapters.find((chapter) => chapter.id === activeId) ?? chapters[0],
@@ -571,6 +597,12 @@ function App() {
         }
       })
       ambientNodesRef.current = null
+      if (musicVisualizerFrameRef.current) window.cancelAnimationFrame(musicVisualizerFrameRef.current)
+      musicVisualizerFrameRef.current = null
+      musicSourceRef.current?.disconnect()
+      musicAnalyserRef.current?.disconnect()
+      musicSourceRef.current = null
+      musicAnalyserRef.current = null
       if (musicElementRef.current) musicElementRef.current.pause()
       if (audioContextRef.current) void audioContextRef.current.close()
     }
@@ -579,6 +611,10 @@ function App() {
   useEffect(() => {
     musicEnabledRef.current = isMusicEnabled
   }, [isMusicEnabled])
+
+  useEffect(() => {
+    activeIdRef.current = activeId
+  }, [activeId])
 
   function ensureAudioGraph() {
     if (typeof window === 'undefined') return null
@@ -602,7 +638,256 @@ function App() {
     return audioContextRef.current
   }
 
+  function syncMusicVisualizerCanvas() {
+    const canvas = musicVisualizerCanvasRef.current
+    if (!canvas) return null
+
+    const rect = canvas.getBoundingClientRect()
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const width = Math.max(1, Math.floor(rect.width))
+    const height = Math.max(1, Math.floor(rect.height))
+    const pixelWidth = Math.floor(width * dpr)
+    const pixelHeight = Math.floor(height * dpr)
+
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth
+      canvas.height = pixelHeight
+    }
+    musicVisualizerSizeRef.current = { width, height }
+
+    const context = canvas.getContext('2d')
+    if (!context) return null
+
+    context.setTransform(dpr, 0, 0, dpr, 0, 0)
+    return { context, width, height }
+  }
+
+  function stopParticleMeter() {
+    if (musicVisualizerFrameRef.current) {
+      window.cancelAnimationFrame(musicVisualizerFrameRef.current)
+      musicVisualizerFrameRef.current = null
+    }
+  }
+
+  function startParticleMeter() {
+    stopParticleMeter()
+
+    const canvasState = syncMusicVisualizerCanvas()
+    if (!canvasState) return
+
+    const frequencyData = new Uint8Array(256)
+    const waveData = new Uint8Array(512)
+
+    const averageBand = (start: number, end: number) => {
+      let total = 0
+      let count = 0
+      const cappedEnd = Math.min(end, frequencyData.length)
+
+      for (let index = start; index < cappedEnd; index += 1) {
+        total += frequencyData[index]
+        count += 1
+      }
+
+      return count > 0 ? total / count / 255 : 0
+    }
+
+    const drawRing = (
+      context: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      baseRadius: number,
+      stretch: number,
+      ringIndex: number,
+      low: number,
+      mid: number,
+      high: number,
+    ) => {
+      const pointCount = 160
+      const ringRadius = baseRadius * (0.36 + ringIndex * 0.105 + low * 0.055)
+      const waveLift = 2.4 + ringIndex * 1.6 + mid * 8
+
+      context.beginPath()
+      for (let index = 0; index <= pointCount; index += 1) {
+        const angle = (index / pointCount) * Math.PI * 2
+        const wave = (waveData[(index * 3 + ringIndex * 17) % waveData.length] - 128) / 128
+        const ripple = wave * waveLift + Math.sin(angle * (3 + ringIndex) + performance.now() * 0.0007) * high * 9
+        const radius = ringRadius + ripple
+        const x = cx + Math.cos(angle) * radius * stretch
+        const y = cy + Math.sin(angle) * radius * 0.72
+
+        if (index === 0) context.moveTo(x, y)
+        else context.lineTo(x, y)
+      }
+
+      context.strokeStyle = `rgba(215, 183, 100, ${0.092 + ringIndex * 0.017 + high * 0.082})`
+      context.lineWidth = (0.42 + ringIndex * 0.06) * (musicEnabledRef.current ? 1.18 : 1)
+      context.stroke()
+    }
+
+    const tick = (time: number) => {
+      const analyserNode = musicAnalyserRef.current
+      const currentCanvas = musicVisualizerCanvasRef.current
+      if (!currentCanvas) {
+        stopParticleMeter()
+        return
+      }
+
+      const { context } = canvasState
+      const { width, height } = musicVisualizerSizeRef.current
+      if (width <= 0 || height <= 0) {
+        stopParticleMeter()
+        return
+      }
+      if (musicEnabledRef.current && analyserNode) {
+        analyserNode.getByteFrequencyData(frequencyData)
+        analyserNode.getByteTimeDomainData(waveData)
+      } else {
+        frequencyData.fill(0)
+        for (let index = 0; index < waveData.length; index += 1) {
+          waveData[index] = 128 + Math.sin(time * 0.0011 + index * 0.08) * 8
+        }
+      }
+
+      const idlePulse = (Math.sin(time * 0.0012) + 1) * 0.5
+      const isMusicLive = musicEnabledRef.current && !!analyserNode
+      const low = isMusicLive ? averageBand(2, 18) : 0.13 + idlePulse * 0.055
+      const mid = isMusicLive ? averageBand(18, 74) : 0.1 + idlePulse * 0.04
+      const high = isMusicLive ? averageBand(74, frequencyData.length) : 0.075 + idlePulse * 0.028
+      const energy = Math.min(1, (isMusicLive ? 0.16 : 0.06) + low * 0.48 + mid * 0.44 + high * 0.24)
+      const focus = audioFocusByChapter[activeIdRef.current] ?? audioFocusByChapter['archive-entry']
+      const cx = width * focus.x
+      const cy = height * focus.y
+      const baseRadius = Math.min(width, height) * focus.radius * (isMusicLive ? 0.9 : 0.82)
+
+      context.clearRect(0, 0, width, height)
+      context.save()
+      context.globalCompositeOperation = 'lighter'
+      context.globalAlpha = (isMusicLive ? 0.74 : 0.62) + energy * (isMusicLive ? 0.48 : 0.24)
+
+      const glow = context.createRadialGradient(cx, cy, 0, cx, cy, baseRadius * 1.48)
+      glow.addColorStop(0, `rgba(215, 183, 100, ${isMusicLive ? 0.32 + low * 0.32 : 0.22 + low * 0.12})`)
+      glow.addColorStop(0.16, `rgba(215, 183, 100, ${isMusicLive ? 0.18 + mid * 0.22 : 0.12 + mid * 0.09})`)
+      glow.addColorStop(0.5, `rgba(215, 183, 100, ${isMusicLive ? 0.065 + high * 0.08 : 0.045 + high * 0.04})`)
+      glow.addColorStop(1, 'rgba(215, 183, 100, 0)')
+      context.fillStyle = glow
+      context.fillRect(0, 0, width, height)
+
+      for (let ringIndex = 0; ringIndex < 10; ringIndex += 1) {
+        drawRing(context, cx, cy, baseRadius, focus.stretch, ringIndex, low, mid, high)
+      }
+
+      context.save()
+      context.translate(cx, cy)
+      context.scale(focus.stretch, 0.72)
+      context.rotate(time * 0.000035)
+      context.beginPath()
+      context.arc(0, 0, baseRadius * (0.28 + low * 0.04), 0, Math.PI * 2)
+      context.arc(0, 0, baseRadius * (0.64 + mid * 0.05), 0, Math.PI * 2)
+      context.strokeStyle = `rgba(255, 225, 142, ${isMusicLive ? 0.14 + high * 0.2 : 0.06 + high * 0.06})`
+      context.lineWidth = isMusicLive ? 0.82 : 0.48
+      context.stroke()
+      context.restore()
+
+      for (let index = 0; index < 128; index += 1) {
+        const angle = (index / 128) * Math.PI * 2 - Math.PI * 0.22
+        const bin = frequencyData[Math.floor((index / 128) * frequencyData.length)] / 255
+        const inner = baseRadius * (0.42 + low * 0.08)
+        const length = 3 + bin * (isMusicLive ? 52 : 24) + high * (isMusicLive ? 18 : 7)
+        const x1 = cx + Math.cos(angle) * inner * focus.stretch
+        const y1 = cy + Math.sin(angle) * inner * 0.72
+        const x2 = cx + Math.cos(angle) * (inner + length) * focus.stretch
+        const y2 = cy + Math.sin(angle) * (inner + length) * 0.72
+
+        context.beginPath()
+        context.moveTo(x1, y1)
+        context.lineTo(x2, y2)
+        context.strokeStyle = `rgba(215, 183, 100, ${isMusicLive ? 0.05 + bin * 0.24 : 0.024 + bin * 0.09})`
+        context.lineWidth = (isMusicLive ? 0.38 : 0.26) + bin * (isMusicLive ? 0.82 : 0.36)
+        context.stroke()
+      }
+
+      for (let spokeIndex = 0; spokeIndex < 18; spokeIndex += 1) {
+        const angle = (spokeIndex / 18) * Math.PI * 2 + time * 0.000025
+        const inner = baseRadius * 0.18
+        const outer = baseRadius * (0.92 + mid * 0.12)
+        context.beginPath()
+        context.moveTo(cx + Math.cos(angle) * inner * focus.stretch, cy + Math.sin(angle) * inner * 0.72)
+        context.lineTo(cx + Math.cos(angle) * outer * focus.stretch, cy + Math.sin(angle) * outer * 0.72)
+        context.strokeStyle = `rgba(215, 183, 100, ${isMusicLive ? 0.045 + high * 0.08 : 0.02 + high * 0.03})`
+        context.lineWidth = isMusicLive ? 0.46 : 0.28
+        context.stroke()
+      }
+
+      audioConstellationNodes.forEach((node, index) => {
+        const band = node.band === 0 ? low : node.band === 1 ? mid : high
+        const angle = node.angle + time * node.speed
+        const orbit = baseRadius * node.orbit * (1 + low * 0.06)
+        const jitter = Math.sin(time * 0.0011 + index * 1.37) * node.jitter * (0.18 + band)
+        const x = cx + Math.cos(angle) * (orbit + jitter) * focus.stretch
+        const y = cy + Math.sin(angle) * (orbit + jitter) * 0.72
+        const size = node.size * (isMusicLive ? 0.72 + band * 1.72 : 0.42 + band * 0.72)
+
+        if (index % 9 === 0) {
+          context.beginPath()
+          const innerX = cx + Math.cos(angle) * baseRadius * 0.2 * focus.stretch
+          const innerY = cy + Math.sin(angle) * baseRadius * 0.2 * 0.72
+          context.moveTo(innerX, innerY)
+          context.lineTo(x, y)
+          context.strokeStyle = `rgba(215, 183, 100, ${isMusicLive ? 0.018 + band * 0.07 : 0.01 + band * 0.028})`
+          context.lineWidth = isMusicLive ? 0.38 : 0.24
+          context.stroke()
+        }
+
+        context.beginPath()
+        context.arc(x, y, size, 0, Math.PI * 2)
+        context.fillStyle =
+          index % 5 === 0
+            ? `rgba(255, 245, 223, ${isMusicLive ? 0.86 : 0.48})`
+            : `rgba(215, 183, 100, ${isMusicLive ? 0.78 : 0.42})`
+        context.shadowColor = 'rgba(215, 183, 100, 0.56)'
+        context.shadowBlur = (isMusicLive ? 6 : 2) + band * (isMusicLive ? 22 : 8)
+        context.fill()
+        context.shadowBlur = 0
+      })
+
+      for (let tickIndex = 0; tickIndex < 72; tickIndex += 1) {
+        const angle = (tickIndex / 72) * Math.PI * 2
+        const bin = frequencyData[(tickIndex * 5) % frequencyData.length] / 255
+        const inner = baseRadius * (1.02 + low * 0.04)
+        const outer = inner + 4 + bin * 16
+
+        context.beginPath()
+        context.moveTo(cx + Math.cos(angle) * inner * focus.stretch, cy + Math.sin(angle) * inner * 0.72)
+        context.lineTo(cx + Math.cos(angle) * outer * focus.stretch, cy + Math.sin(angle) * outer * 0.72)
+        context.strokeStyle = `rgba(255, 225, 142, ${isMusicLive ? 0.06 + bin * 0.22 : 0.026 + bin * 0.08})`
+        context.lineWidth = isMusicLive ? 0.46 : 0.28
+        context.stroke()
+      }
+
+      context.restore()
+      musicVisualizerFrameRef.current = window.requestAnimationFrame(tick)
+    }
+
+    musicVisualizerFrameRef.current = window.requestAnimationFrame(tick)
+  }
+
+  useEffect(() => {
+    const startTimer = window.setTimeout(() => startParticleMeter(), 80)
+    const handleResize = () => startParticleMeter()
+
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.clearTimeout(startTimer)
+      window.removeEventListener('resize', handleResize)
+    }
+    // The visualizer reads live refs, so mount-only wiring is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function stopAmbientSound(fadeTime = 0.9) {
+    stopParticleMeter()
+
     const context = audioContextRef.current
     const ambient = ambientNodesRef.current
     if (context && ambient) {
@@ -628,6 +913,15 @@ function App() {
       music.pause()
       music.currentTime = 0
     }
+
+    musicSourceRef.current?.disconnect()
+    musicAnalyserRef.current?.disconnect()
+    musicSourceRef.current = null
+    musicAnalyserRef.current = null
+
+    window.setTimeout(() => {
+      if (!musicEnabledRef.current) startParticleMeter()
+    }, fadeTime * 1000 + 140)
   }
 
   function startGeneratedAmbient(context: AudioContext) {
@@ -712,6 +1006,22 @@ function App() {
     music.volume = musicBaseVolume
     music.preload = 'auto'
     musicElementRef.current = music
+    musicSourceRef.current?.disconnect()
+    musicAnalyserRef.current?.disconnect()
+    musicSourceRef.current = null
+    musicAnalyserRef.current = null
+
+    if (audioMasterRef.current) {
+      const source = context.createMediaElementSource(music)
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 512
+      analyser.smoothingTimeConstant = 0.82
+      source.connect(analyser)
+      analyser.connect(audioMasterRef.current)
+      musicSourceRef.current = source
+      musicAnalyserRef.current = analyser
+      startParticleMeter()
+    }
 
     const fallbackToGenerated = () => {
       if (!musicEnabledRef.current) return
@@ -1221,6 +1531,11 @@ function App() {
             )
           })}
         </div>
+        <canvas
+          className={`music-visualizer-canvas ${isMusicEnabled ? 'is-on' : ''}`}
+          ref={musicVisualizerCanvasRef}
+          aria-hidden="true"
+        />
       </div>
 
       {guide ? (

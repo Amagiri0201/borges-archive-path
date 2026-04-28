@@ -203,6 +203,27 @@ button {
     filter 1180ms ease;
 }
 
+.music-visualizer-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.72;
+  mix-blend-mode: screen;
+  transition: opacity 960ms ease;
+}
+
+.music-visualizer-canvas.is-on {
+  opacity: 0.96;
+}
+
+.app-shell.transition-fading .music-visualizer-canvas,
+.app-shell.transition-traveling .music-visualizer-canvas {
+  opacity: 0;
+}
+
 .map-cell {
   width: 100vw;
   height: 100svh;
@@ -882,6 +903,10 @@ button {
   opacity: 1;
 }
 
+.aleph-actor-layer {
+  z-index: 9;
+}
+
 .aleph-field::before {
   content: "";
   position: absolute;
@@ -1123,9 +1148,9 @@ button {
 
 .hotspot {
   position: absolute;
-  width: 34px;
-  height: 34px;
-  margin: -17px 0 0 -17px;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -1139,9 +1164,9 @@ button {
 }
 
 .hotspot-layer-semantic .hotspot {
-  width: 42px;
-  height: 42px;
-  margin: -21px 0 0 -21px;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
 }
 
 .hotspot-pulse,
@@ -1154,15 +1179,35 @@ button {
 
 .hotspot-pulse {
   background: radial-gradient(circle, rgba(215, 183, 100, 0.26), rgba(215, 183, 100, 0.08) 58%, transparent 70%);
-  box-shadow: 0 0 18px rgba(215, 183, 100, 0.14);
+  box-shadow: 0 0 22px rgba(215, 183, 100, 0.18);
   mix-blend-mode: screen;
 }
 
 .hotspot-pulse::after {
   content: "";
-  inset: -8px;
-  border: 1px solid rgba(215, 183, 100, 0.22);
+  inset: -10px;
+  border: 1px solid rgba(215, 183, 100, 0.28);
   animation: hotspotPulse 2.8s ease-out infinite;
+}
+
+.hotspot-pulse::before {
+  content: "";
+  position: absolute;
+  inset: -13px;
+  border-radius: 999px;
+  opacity: 0.42;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(215, 183, 100, 0) 0 8deg,
+      rgba(215, 183, 100, 0.52) 8deg 10deg,
+      rgba(215, 183, 100, 0) 10deg 34deg,
+      rgba(255, 245, 223, 0.44) 34deg 36deg,
+      rgba(215, 183, 100, 0) 36deg 90deg
+    );
+  -webkit-mask-image: radial-gradient(circle, transparent 0 54%, #000 56% 68%, transparent 70%);
+  mask-image: radial-gradient(circle, transparent 0 54%, #000 56% 68%, transparent 70%);
+  animation: hotspotCompassSpin 9.5s linear infinite;
 }
 
 .hotspot.is-collectable .hotspot-pulse {
@@ -1186,7 +1231,7 @@ button {
 }
 
 .hotspot-layer-semantic .hotspot-pulse {
-  inset: 12px;
+  inset: 13px;
   background: radial-gradient(circle, rgba(215, 183, 100, 0.22), rgba(215, 183, 100, 0.06) 56%, transparent 72%);
   box-shadow: 0 0 24px rgba(215, 183, 100, 0.12);
 }
@@ -1196,7 +1241,7 @@ button {
 }
 
 .hotspot-layer-semantic .hotspot-core {
-  inset: 17px;
+  inset: 19px;
 }
 
 .hotspot-label {
@@ -1251,6 +1296,12 @@ button {
     0 0 22px rgba(215, 183, 100, 0.38),
     0 0 0 10px rgba(215, 183, 100, 0.06);
   transform: scale(1.18);
+}
+
+.hotspot:hover .hotspot-pulse::before,
+.hotspot:focus-visible .hotspot-pulse::before {
+  opacity: 0.74;
+  animation-duration: 5.8s;
 }
 
 .hotspot-layer-semantic .hotspot-label {
@@ -1815,10 +1866,10 @@ button {
 
 .thought-portrait {
   position: absolute;
-  left: -172px;
-  top: -60px;
-  z-index: 3;
-  width: 240px;
+  left: -194px;
+  top: -64px;
+  z-index: 2;
+  width: 232px;
   height: 316px;
   overflow: visible;
   pointer-events: none;
@@ -1865,7 +1916,7 @@ button {
   position: absolute;
   left: 0;
   bottom: -10px;
-  width: 230px;
+  width: 224px;
   max-width: none;
   opacity: 1;
   filter: grayscale(0.04) sepia(0.22) contrast(1.14) brightness(1.02) saturate(1.02);
@@ -1874,7 +1925,7 @@ button {
 
 .thought-body {
   position: relative;
-  z-index: 3;
+  z-index: 4;
   display: grid;
   gap: 8px;
   min-height: 178px;
@@ -2260,6 +2311,12 @@ button {
   to {
     opacity: 0;
     transform: scale(1.9);
+  }
+}
+
+@keyframes hotspotCompassSpin {
+  to {
+    transform: rotate(1turn);
   }
 }
 

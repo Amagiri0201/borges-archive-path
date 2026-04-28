@@ -318,7 +318,7 @@ export const chapters: Chapter[] = [
       {
         id: 'aleph-core',
         label: '中心光点',
-        x: 73.6,
+        x: 74.4,
         y: 50.6,
         text: '阿莱夫是全站的汇聚点：时间、城市、镜像、梦和文本碎片在这里短暂相遇。',
         source: 'S2 Poetry Foundation / The Aleph',
