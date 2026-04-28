@@ -20,6 +20,21 @@ type GuideState = {
 
 type TransitionPhase = 'idle' | 'fading' | 'traveling' | 'settling'
 type ThoughtSwapPhase = 'idle' | 'out' | 'in' | 'closing'
+type SoundCue =
+  | 'toggle-on'
+  | 'toggle-off'
+  | 'chapter'
+  | 'thought-open'
+  | 'thought-close'
+  | 'prompt'
+  | 'branch'
+  | 'collect'
+  | 'evidence'
+
+type AmbientNodes = {
+  gain: GainNode
+  nodes: AudioScheduledSourceNode[]
+}
 
 const mapColumns = 3
 const fadeDuration = 640
@@ -28,6 +43,7 @@ const settleDuration = 1540
 const thoughtSwapOutDuration = 520
 const thoughtSwapInDuration = 1120
 const thoughtCloseDuration = 760
+const ambientMusicPath = '/audio/ambient.mp3'
 
 const thoughtPromptLabelsByChapter: Record<string, Partial<Record<string, string>>> = {
   'archive-entry': {
@@ -181,6 +197,13 @@ function getGuideKey(guide: GuideState) {
 
 function getThoughtPromptLabel(chapterId: string, prompt: ThoughtPrompt) {
   return thoughtPromptLabelsByChapter[chapterId]?.[prompt.id] ?? prompt.label
+}
+
+function getBrowserAudioContext() {
+  const AudioContextCtor =
+    window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+
+  return AudioContextCtor ? new AudioContextCtor() : null
 }
 
 function actorsOfType<T extends SpatialActor['type']>(
@@ -480,6 +503,7 @@ function App() {
   )
   const [activeThoughtPromptId, setActiveThoughtPromptId] = useState<string | null>(null)
   const [isEvidenceOpen, setIsEvidenceOpen] = useState(false)
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false)
   const [readingPath, setReadingPath] = useState<string | null>(null)
   const [collectedIds, setCollectedIds] = useState<string[]>([])
   const swapTimerRef = useRef<number | null>(null)
@@ -487,6 +511,11 @@ function App() {
   const idleTimerRef = useRef<number | null>(null)
   const guideSwapTimerRef = useRef<number | null>(null)
   const guideIdleTimerRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioMasterRef = useRef<GainNode | null>(null)
+  const ambientNodesRef = useRef<AmbientNodes | null>(null)
+  const musicElementRef = useRef<HTMLAudioElement | null>(null)
+  const audioEnabledRef = useRef(false)
 
   const activeChapter = useMemo(
     () => chapters.find((chapter) => chapter.id === activeId) ?? chapters[0],
@@ -524,8 +553,262 @@ function App() {
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
       if (guideSwapTimerRef.current) window.clearTimeout(guideSwapTimerRef.current)
       if (guideIdleTimerRef.current) window.clearTimeout(guideIdleTimerRef.current)
+      ambientNodesRef.current?.nodes.forEach((node) => {
+        try {
+          node.stop()
+        } catch {
+          // The source may already have ended; that is harmless.
+        }
+      })
+      ambientNodesRef.current = null
+      if (musicElementRef.current) musicElementRef.current.pause()
+      if (audioContextRef.current) void audioContextRef.current.close()
     }
   }, [])
+
+  useEffect(() => {
+    audioEnabledRef.current = isAudioEnabled
+  }, [isAudioEnabled])
+
+  function ensureAudioGraph() {
+    if (typeof window === 'undefined') return null
+
+    if (!audioContextRef.current) {
+      const context = getBrowserAudioContext()
+      if (!context) return null
+
+      const master = context.createGain()
+      master.gain.setValueAtTime(0.72, context.currentTime)
+      master.connect(context.destination)
+
+      audioContextRef.current = context
+      audioMasterRef.current = master
+    }
+
+    if (audioContextRef.current.state === 'suspended') {
+      void audioContextRef.current.resume()
+    }
+
+    return audioContextRef.current
+  }
+
+  function stopAmbientSound(fadeTime = 0.9) {
+    const context = audioContextRef.current
+    const ambient = ambientNodesRef.current
+    if (context && ambient) {
+      const now = context.currentTime
+      ambient.gain.gain.cancelScheduledValues(now)
+      ambient.gain.gain.setValueAtTime(ambient.gain.gain.value, now)
+      ambient.gain.gain.linearRampToValueAtTime(0.0001, now + fadeTime)
+      window.setTimeout(() => {
+        ambient.nodes.forEach((node) => {
+          try {
+            node.stop()
+          } catch {
+            // The source may already have ended; that is harmless.
+          }
+        })
+        ambientNodesRef.current = null
+      }, fadeTime * 1000 + 80)
+    }
+
+    const music = musicElementRef.current
+    if (music) {
+      music.volume = 0
+      music.pause()
+      music.currentTime = 0
+    }
+  }
+
+  function startGeneratedAmbient(context: AudioContext) {
+    if (ambientNodesRef.current || !audioMasterRef.current) return
+
+    const now = context.currentTime
+    const gain = context.createGain()
+    const filter = context.createBiquadFilter()
+    const lfo = context.createOscillator()
+    const lfoGain = context.createGain()
+    const nodes: AudioScheduledSourceNode[] = []
+
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.linearRampToValueAtTime(0.082, now + 1.8)
+
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(820, now)
+    filter.Q.setValueAtTime(0.48, now)
+
+    lfo.type = 'sine'
+    lfo.frequency.setValueAtTime(0.045, now)
+    lfoGain.gain.setValueAtTime(0.018, now)
+    lfo.connect(lfoGain)
+    lfoGain.connect(gain.gain)
+    lfo.start(now)
+    nodes.push(lfo)
+
+    const droneDefs: Array<{ frequency: number; type: OscillatorType; level: number; detune?: number }> = [
+      { frequency: 55, type: 'sine', level: 0.46 },
+      { frequency: 82.41, type: 'triangle', level: 0.18, detune: -6 },
+      { frequency: 110, type: 'sine', level: 0.1, detune: 5 },
+    ]
+
+    droneDefs.forEach((def) => {
+      const osc = context.createOscillator()
+      const voiceGain = context.createGain()
+      osc.type = def.type
+      osc.frequency.setValueAtTime(def.frequency, now)
+      if (def.detune) osc.detune.setValueAtTime(def.detune, now)
+      voiceGain.gain.setValueAtTime(def.level, now)
+      osc.connect(voiceGain)
+      voiceGain.connect(filter)
+      osc.start(now)
+      nodes.push(osc)
+    })
+
+    const noiseBuffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate)
+    const data = noiseBuffer.getChannelData(0)
+    for (let index = 0; index < data.length; index += 1) {
+      const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453
+      data[index] = ((value - Math.floor(value)) * 2 - 1) * 0.16
+    }
+
+    const noise = context.createBufferSource()
+    const noiseFilter = context.createBiquadFilter()
+    const noiseGain = context.createGain()
+    noise.buffer = noiseBuffer
+    noise.loop = true
+    noiseFilter.type = 'bandpass'
+    noiseFilter.frequency.setValueAtTime(1240, now)
+    noiseFilter.Q.setValueAtTime(0.36, now)
+    noiseGain.gain.setValueAtTime(0.08, now)
+    noise.connect(noiseFilter)
+    noiseFilter.connect(noiseGain)
+    noiseGain.connect(filter)
+    noise.start(now)
+    nodes.push(noise)
+
+    filter.connect(gain)
+    gain.connect(audioMasterRef.current)
+    ambientNodesRef.current = { gain, nodes }
+  }
+
+  function startAmbientSound() {
+    const context = ensureAudioGraph()
+    if (!context) return
+
+    stopAmbientSound(0.04)
+
+    const music = new Audio(ambientMusicPath)
+    music.loop = true
+    music.volume = 0.34
+    music.preload = 'auto'
+    musicElementRef.current = music
+
+    const fallbackToGenerated = () => {
+      if (!audioEnabledRef.current) return
+      startGeneratedAmbient(context)
+    }
+
+    music.addEventListener('error', fallbackToGenerated, { once: true })
+    void music.play().catch(fallbackToGenerated)
+  }
+
+  function playTone({
+    frequency,
+    duration,
+    delay = 0,
+    gain = 0.08,
+    type = 'sine',
+    endFrequency,
+  }: {
+    frequency: number
+    duration: number
+    delay?: number
+    gain?: number
+    type?: OscillatorType
+    endFrequency?: number
+  }) {
+    const context = ensureAudioGraph()
+    if (!context || !audioMasterRef.current) return
+
+    const now = context.currentTime + delay
+    const osc = context.createOscillator()
+    const toneGain = context.createGain()
+    const filter = context.createBiquadFilter()
+
+    osc.type = type
+    osc.frequency.setValueAtTime(frequency, now)
+    if (endFrequency) osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), now + duration)
+
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(2200, now)
+    filter.Q.setValueAtTime(0.2, now)
+
+    toneGain.gain.setValueAtTime(0.0001, now)
+    toneGain.gain.linearRampToValueAtTime(gain, now + Math.min(0.035, duration * 0.22))
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+
+    osc.connect(filter)
+    filter.connect(toneGain)
+    toneGain.connect(audioMasterRef.current)
+    osc.start(now)
+    osc.stop(now + duration + 0.04)
+  }
+
+  function playSound(cue: SoundCue, force = false) {
+    if (!force && !audioEnabledRef.current) return
+
+    switch (cue) {
+      case 'toggle-on':
+        playTone({ frequency: 196, endFrequency: 247, duration: 0.22, gain: 0.06, type: 'sine' })
+        playTone({ frequency: 392, duration: 0.28, delay: 0.06, gain: 0.045, type: 'triangle' })
+        break
+      case 'toggle-off':
+        playTone({ frequency: 240, endFrequency: 120, duration: 0.32, gain: 0.05, type: 'sine' })
+        break
+      case 'chapter':
+        playTone({ frequency: 92, endFrequency: 58, duration: 0.72, gain: 0.085, type: 'sine' })
+        playTone({ frequency: 330, endFrequency: 520, duration: 0.42, delay: 0.16, gain: 0.026, type: 'triangle' })
+        break
+      case 'thought-open':
+        playTone({ frequency: 146.83, duration: 0.38, gain: 0.05, type: 'triangle' })
+        playTone({ frequency: 587.33, duration: 0.18, delay: 0.08, gain: 0.035, type: 'sine' })
+        break
+      case 'thought-close':
+        playTone({ frequency: 320, endFrequency: 180, duration: 0.46, gain: 0.045, type: 'sine' })
+        break
+      case 'prompt':
+        playTone({ frequency: 520, duration: 0.09, gain: 0.032, type: 'triangle' })
+        playTone({ frequency: 650, duration: 0.12, delay: 0.07, gain: 0.024, type: 'sine' })
+        break
+      case 'branch':
+        playTone({ frequency: 196, duration: 0.16, gain: 0.048, type: 'triangle' })
+        playTone({ frequency: 293.66, duration: 0.16, delay: 0.08, gain: 0.04, type: 'triangle' })
+        playTone({ frequency: 392, duration: 0.2, delay: 0.16, gain: 0.034, type: 'sine' })
+        break
+      case 'collect':
+        playTone({ frequency: 440, duration: 0.14, gain: 0.036, type: 'triangle' })
+        playTone({ frequency: 880, duration: 0.14, delay: 0.08, gain: 0.028, type: 'sine' })
+        break
+      case 'evidence':
+        playTone({ frequency: 277.18, duration: 0.18, gain: 0.035, type: 'triangle' })
+        break
+    }
+  }
+
+  function toggleAudio() {
+    if (isAudioEnabled) {
+      playSound('toggle-off', true)
+      setIsAudioEnabled(false)
+      audioEnabledRef.current = false
+      window.setTimeout(() => stopAmbientSound(0.7), 120)
+      return
+    }
+
+    audioEnabledRef.current = true
+    setIsAudioEnabled(true)
+    startAmbientSound()
+    playSound('toggle-on', true)
+  }
 
   function clearGuideTimers() {
     if (guideSwapTimerRef.current) window.clearTimeout(guideSwapTimerRef.current)
@@ -549,6 +832,8 @@ function App() {
 
   function activateChapter(id: string) {
     if (id === activeId || !chapters.some((chapter) => chapter.id === id)) return
+
+    playSound('chapter')
 
     if (swapTimerRef.current) window.clearTimeout(swapTimerRef.current)
     if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
@@ -580,6 +865,7 @@ function App() {
     const currentGuideKey = getGuideKey(guide)
     const nextGuideKey = getGuideKey(nextGuide)
 
+    playSound('thought-open')
     clearGuideTimers()
     setActiveThoughtPromptId(null)
     setIsEvidenceOpen(false)
@@ -610,6 +896,7 @@ function App() {
   function closeGuide() {
     if (!guide) return
 
+    playSound('thought-close')
     clearGuideTimers()
     setThoughtSwapPhase('closing')
     guideSwapTimerRef.current = window.setTimeout(() => {
@@ -622,6 +909,7 @@ function App() {
   function selectThoughtPrompt(promptId: string | null) {
     if (promptId === activeThoughtPromptId) return
 
+    playSound('prompt')
     clearGuideTimers()
     setThoughtSwapPhase('out')
     guideSwapTimerRef.current = window.setTimeout(() => {
@@ -632,6 +920,7 @@ function App() {
   }
 
   function chooseBranch(choiceId: string, targetId: string) {
+    playSound('branch')
     setReadingPath(choiceId)
     window.setTimeout(() => activateChapter(targetId), 320)
   }
@@ -643,8 +932,14 @@ function App() {
   function collectCurrentThought() {
     if (!guide) return
 
+    playSound('collect')
     const key = `${guide.chapter.id}:${guide.hotspot.id}`
     setCollectedIds((current) => (current.includes(key) ? current : [...current, key]))
+  }
+
+  function toggleEvidence() {
+    playSound('evidence')
+    setIsEvidenceOpen((current) => !current)
   }
 
   const currentThought = guide ? getThoughtEcho(guide.chapter.id, guide.hotspot.id) : null
@@ -730,6 +1025,19 @@ function App() {
 
       <button className="next-chapter hud-next" onClick={goNextChapter}>
         下一章
+      </button>
+
+      <button
+        className={`audio-toggle ${isAudioEnabled ? 'is-on' : ''}`}
+        onClick={toggleAudio}
+        aria-label={isAudioEnabled ? '关闭声音' : '开启声音'}
+        title={isAudioEnabled ? '关闭声音' : '开启声音'}
+      >
+        <span className="audio-toggle-icon" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
       </button>
 
       <div className="spatial-map-viewport" aria-label="博尔赫斯空间地图">
@@ -909,7 +1217,7 @@ function App() {
                     <span>{choice.label}</span>
                   </button>
                 ))}
-                <button className="thought-evidence-toggle" onClick={() => setIsEvidenceOpen((current) => !current)}>
+                <button className="thought-evidence-toggle" onClick={toggleEvidence}>
                   <span>{isEvidenceOpen ? '收起证据' : '文本证据'}</span>
                 </button>
               </div>
@@ -918,7 +1226,7 @@ function App() {
                 <button onClick={collectCurrentThought}>
                   <span>{currentThought?.collectLabel ?? '收入路径'}</span>
                 </button>
-                <button onClick={() => setIsEvidenceOpen((current) => !current)}>
+                <button onClick={toggleEvidence}>
                   <span>{isEvidenceOpen ? '收起证据' : '文本证据'}</span>
                 </button>
               </div>
