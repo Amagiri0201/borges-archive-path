@@ -1,8 +1,6 @@
 node_modules/
 dist/
 output/
-public/audio/*.mp3
-!public/audio/.gitkeep
 *.log
 .DS_Store
 Thumbs.db

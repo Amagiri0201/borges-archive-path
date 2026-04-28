@@ -30,6 +30,7 @@ type SoundCue =
   | 'branch'
   | 'collect'
   | 'evidence'
+  | 'typing'
 
 type AmbientNodes = {
   gain: GainNode
@@ -44,6 +45,7 @@ const thoughtSwapOutDuration = 520
 const thoughtSwapInDuration = 1120
 const thoughtCloseDuration = 760
 const ambientMusicPath = '/audio/ambient.mp3'
+const musicBaseVolume = 0.2
 
 const thoughtPromptLabelsByChapter: Record<string, Partial<Record<string, string>>> = {
   'archive-entry': {
@@ -447,12 +449,19 @@ function SemanticActorLayer({
 
 function TypewriterText({
   className,
+  onCharacter,
   text,
 }: {
   className: string
+  onCharacter?: (index: number, character: string) => void
   text: string
 }) {
   const [displayText, setDisplayText] = useState('')
+  const onCharacterRef = useRef(onCharacter)
+
+  useEffect(() => {
+    onCharacterRef.current = onCharacter
+  }, [onCharacter])
 
   useEffect(() => {
     const characters = Array.from(text)
@@ -469,6 +478,7 @@ function TypewriterText({
         typingTimer = window.setInterval(() => {
           index += 1
           setDisplayText(characters.slice(0, index).join(''))
+          onCharacterRef.current?.(index, characters[index - 1] ?? '')
 
           if (index >= characters.length && typingTimer) {
             window.clearInterval(typingTimer)
@@ -503,7 +513,7 @@ function App() {
   )
   const [activeThoughtPromptId, setActiveThoughtPromptId] = useState<string | null>(null)
   const [isEvidenceOpen, setIsEvidenceOpen] = useState(false)
-  const [isAudioEnabled, setIsAudioEnabled] = useState(false)
+  const [isMusicEnabled, setIsMusicEnabled] = useState(false)
   const [readingPath, setReadingPath] = useState<string | null>(null)
   const [collectedIds, setCollectedIds] = useState<string[]>([])
   const swapTimerRef = useRef<number | null>(null)
@@ -515,7 +525,7 @@ function App() {
   const audioMasterRef = useRef<GainNode | null>(null)
   const ambientNodesRef = useRef<AmbientNodes | null>(null)
   const musicElementRef = useRef<HTMLAudioElement | null>(null)
-  const audioEnabledRef = useRef(false)
+  const musicEnabledRef = useRef(false)
 
   const activeChapter = useMemo(
     () => chapters.find((chapter) => chapter.id === activeId) ?? chapters[0],
@@ -567,8 +577,8 @@ function App() {
   }, [])
 
   useEffect(() => {
-    audioEnabledRef.current = isAudioEnabled
-  }, [isAudioEnabled])
+    musicEnabledRef.current = isMusicEnabled
+  }, [isMusicEnabled])
 
   function ensureAudioGraph() {
     if (typeof window === 'undefined') return null
@@ -578,7 +588,7 @@ function App() {
       if (!context) return null
 
       const master = context.createGain()
-      master.gain.setValueAtTime(0.72, context.currentTime)
+      master.gain.setValueAtTime(0.96, context.currentTime)
       master.connect(context.destination)
 
       audioContextRef.current = context
@@ -699,12 +709,12 @@ function App() {
 
     const music = new Audio(ambientMusicPath)
     music.loop = true
-    music.volume = 0.34
+    music.volume = musicBaseVolume
     music.preload = 'auto'
     musicElementRef.current = music
 
     const fallbackToGenerated = () => {
-      if (!audioEnabledRef.current) return
+      if (!musicEnabledRef.current) return
       startGeneratedAmbient(context)
     }
 
@@ -754,60 +764,117 @@ function App() {
     osc.stop(now + duration + 0.04)
   }
 
-  function playSound(cue: SoundCue, force = false) {
-    if (!force && !audioEnabledRef.current) return
+  function playNoiseTick({
+    duration = 0.036,
+    delay = 0,
+    gain = 0.055,
+    frequency = 2800,
+    q = 3.2,
+    filterType = 'bandpass',
+  }: {
+    duration?: number
+    delay?: number
+    gain?: number
+    frequency?: number
+    q?: number
+    filterType?: BiquadFilterType
+  }) {
+    const context = ensureAudioGraph()
+    if (!context || !audioMasterRef.current) return
 
+    const now = context.currentTime + delay
+    const length = Math.max(1, Math.floor(context.sampleRate * duration))
+    const buffer = context.createBuffer(1, length, context.sampleRate)
+    const data = buffer.getChannelData(0)
+    const seed = frequency * 0.017 + duration * 1000
+
+    for (let index = 0; index < length; index += 1) {
+      const value = Math.sin((index + 1) * 91.731 + seed) * 28143.449
+      const envelope = 1 - index / length
+      data[index] = ((value - Math.floor(value)) * 2 - 1) * envelope
+    }
+
+    const source = context.createBufferSource()
+    const filter = context.createBiquadFilter()
+    const tickGain = context.createGain()
+
+    source.buffer = buffer
+    filter.type = filterType
+    filter.frequency.setValueAtTime(frequency, now)
+    filter.Q.setValueAtTime(q, now)
+    tickGain.gain.setValueAtTime(0.0001, now)
+    tickGain.gain.linearRampToValueAtTime(gain, now + Math.min(0.01, duration * 0.3))
+    tickGain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+
+    source.connect(filter)
+    filter.connect(tickGain)
+    tickGain.connect(audioMasterRef.current)
+    source.start(now)
+    source.stop(now + duration + 0.02)
+  }
+
+  function playSound(cue: SoundCue) {
     switch (cue) {
       case 'toggle-on':
-        playTone({ frequency: 196, endFrequency: 247, duration: 0.22, gain: 0.06, type: 'sine' })
-        playTone({ frequency: 392, duration: 0.28, delay: 0.06, gain: 0.045, type: 'triangle' })
+        playNoiseTick({ frequency: 3200, q: 4.6, gain: 0.09, duration: 0.038 })
+        playTone({ frequency: 185, endFrequency: 220, duration: 0.16, delay: 0.018, gain: 0.048, type: 'triangle' })
         break
       case 'toggle-off':
-        playTone({ frequency: 240, endFrequency: 120, duration: 0.32, gain: 0.05, type: 'sine' })
+        playNoiseTick({ frequency: 2100, q: 3.6, gain: 0.072, duration: 0.04 })
+        playTone({ frequency: 210, endFrequency: 120, duration: 0.2, delay: 0.018, gain: 0.044, type: 'triangle' })
         break
       case 'chapter':
-        playTone({ frequency: 92, endFrequency: 58, duration: 0.72, gain: 0.085, type: 'sine' })
-        playTone({ frequency: 330, endFrequency: 520, duration: 0.42, delay: 0.16, gain: 0.026, type: 'triangle' })
+        playTone({ frequency: 74, endFrequency: 48, duration: 0.68, gain: 0.12, type: 'sine' })
+        playNoiseTick({ frequency: 820, q: 0.9, gain: 0.062, duration: 0.18, delay: 0.08, filterType: 'lowpass' })
+        playNoiseTick({ frequency: 2500, q: 2.6, gain: 0.042, duration: 0.055, delay: 0.22 })
         break
       case 'thought-open':
-        playTone({ frequency: 146.83, duration: 0.38, gain: 0.05, type: 'triangle' })
-        playTone({ frequency: 587.33, duration: 0.18, delay: 0.08, gain: 0.035, type: 'sine' })
+        playNoiseTick({ frequency: 3400, q: 5.2, gain: 0.085, duration: 0.044 })
+        playNoiseTick({ frequency: 1700, q: 2.4, gain: 0.046, duration: 0.06, delay: 0.055 })
+        playTone({ frequency: 233, duration: 0.16, delay: 0.03, gain: 0.032, type: 'triangle' })
         break
       case 'thought-close':
-        playTone({ frequency: 320, endFrequency: 180, duration: 0.46, gain: 0.045, type: 'sine' })
+        playNoiseTick({ frequency: 1900, q: 3.8, gain: 0.068, duration: 0.05 })
+        playTone({ frequency: 260, endFrequency: 150, duration: 0.2, delay: 0.02, gain: 0.034, type: 'triangle' })
         break
       case 'prompt':
-        playTone({ frequency: 520, duration: 0.09, gain: 0.032, type: 'triangle' })
-        playTone({ frequency: 650, duration: 0.12, delay: 0.07, gain: 0.024, type: 'sine' })
+        playNoiseTick({ frequency: 3600, q: 5.8, gain: 0.078, duration: 0.032 })
+        playNoiseTick({ frequency: 2500, q: 4.4, gain: 0.05, duration: 0.03, delay: 0.055 })
         break
       case 'branch':
-        playTone({ frequency: 196, duration: 0.16, gain: 0.048, type: 'triangle' })
-        playTone({ frequency: 293.66, duration: 0.16, delay: 0.08, gain: 0.04, type: 'triangle' })
-        playTone({ frequency: 392, duration: 0.2, delay: 0.16, gain: 0.034, type: 'sine' })
+        playNoiseTick({ frequency: 3000, q: 4.2, gain: 0.078, duration: 0.038 })
+        playNoiseTick({ frequency: 1200, q: 1.8, gain: 0.052, duration: 0.07, delay: 0.07 })
+        playTone({ frequency: 196, duration: 0.12, delay: 0.035, gain: 0.03, type: 'triangle' })
         break
       case 'collect':
-        playTone({ frequency: 440, duration: 0.14, gain: 0.036, type: 'triangle' })
-        playTone({ frequency: 880, duration: 0.14, delay: 0.08, gain: 0.028, type: 'sine' })
+        playNoiseTick({ frequency: 4100, q: 6.4, gain: 0.074, duration: 0.028 })
+        playNoiseTick({ frequency: 3150, q: 5.2, gain: 0.052, duration: 0.026, delay: 0.052 })
+        playTone({ frequency: 520, duration: 0.08, delay: 0.035, gain: 0.026, type: 'triangle' })
         break
       case 'evidence':
-        playTone({ frequency: 277.18, duration: 0.18, gain: 0.035, type: 'triangle' })
+        playNoiseTick({ frequency: 2300, q: 3.2, gain: 0.076, duration: 0.05 })
+        playNoiseTick({ frequency: 780, q: 1.1, gain: 0.038, duration: 0.09, delay: 0.035, filterType: 'lowpass' })
+        break
+      case 'typing':
+        playNoiseTick({ frequency: 3900, q: 7.2, gain: 0.048, duration: 0.022 })
+        playNoiseTick({ frequency: 1450, q: 2.6, gain: 0.022, duration: 0.028, delay: 0.01 })
         break
     }
   }
 
-  function toggleAudio() {
-    if (isAudioEnabled) {
-      playSound('toggle-off', true)
-      setIsAudioEnabled(false)
-      audioEnabledRef.current = false
+  function toggleMusic() {
+    if (isMusicEnabled) {
+      playSound('toggle-off')
+      setIsMusicEnabled(false)
+      musicEnabledRef.current = false
       window.setTimeout(() => stopAmbientSound(0.7), 120)
       return
     }
 
-    audioEnabledRef.current = true
-    setIsAudioEnabled(true)
+    musicEnabledRef.current = true
+    setIsMusicEnabled(true)
     startAmbientSound()
-    playSound('toggle-on', true)
+    playSound('toggle-on')
   }
 
   function clearGuideTimers() {
@@ -960,6 +1027,13 @@ function App() {
   const currentGuideKey = getGuideKey(guide)
   const currentThoughtLineKey = `${currentGuideKey}:${activeThoughtPromptId ?? 'opening'}`
 
+  function playTypingCharacter(index: number, character: string) {
+    if (!character.trim()) return
+
+    const isPunctuation = /[，。；、,.!?！？:：;]/.test(character)
+    if (isPunctuation || index % 3 === 0) playSound('typing')
+  }
+
   return (
     <main
       className={`app-shell transition-${transitionPhase} ${isTransitioning ? 'is-transitioning' : ''}`}
@@ -1028,10 +1102,10 @@ function App() {
       </button>
 
       <button
-        className={`audio-toggle ${isAudioEnabled ? 'is-on' : ''}`}
-        onClick={toggleAudio}
-        aria-label={isAudioEnabled ? '关闭声音' : '开启声音'}
-        title={isAudioEnabled ? '关闭声音' : '开启声音'}
+        className={`audio-toggle ${isMusicEnabled ? 'is-on' : ''}`}
+        onClick={toggleMusic}
+        aria-label={isMusicEnabled ? '关闭背景音乐' : '开启背景音乐'}
+        title={isMusicEnabled ? '关闭背景音乐' : '开启背景音乐'}
       >
         <span className="audio-toggle-icon" aria-hidden="true">
           <span />
@@ -1183,6 +1257,7 @@ function App() {
             <TypewriterText
               className="thought-line"
               key={currentThoughtLineKey}
+              onCharacter={playTypingCharacter}
               text={currentThoughtText}
             />
 
