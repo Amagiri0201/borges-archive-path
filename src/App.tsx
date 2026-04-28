@@ -47,8 +47,24 @@ const thoughtCloseDuration = 760
 const ambientMusicPath = '/audio/ambient.mp3'
 const musicBaseVolume = 0.2
 const audioVisualizerChapterId = 'aleph'
-const audioFocusByChapter: Record<string, { x: number; y: number; radius: number; stretch: number }> = {
-  aleph: { x: 0.814, y: 0.506, radius: 0.27, stretch: 1.18 },
+type AudioVisualizerMode = 'archive' | 'city' | 'library' | 'fork' | 'mirror' | 'ember' | 'aleph' | 'sand' | 'method'
+type AudioVisualizerProfile = {
+  mode: AudioVisualizerMode
+  x: number
+  y: number
+  radius: number
+  stretch: number
+}
+const audioVisualizerProfiles: Record<string, AudioVisualizerProfile> = {
+  'archive-entry': { mode: 'archive', x: 0.5, y: 0.5, radius: 0.2, stretch: 1.1 },
+  'city-memory': { mode: 'city', x: 0.58, y: 0.56, radius: 0.24, stretch: 1.2 },
+  'library-life': { mode: 'library', x: 0.53, y: 0.48, radius: 0.24, stretch: 1.25 },
+  'forking-paths': { mode: 'fork', x: 0.58, y: 0.64, radius: 0.24, stretch: 1.2 },
+  'mirror-dream': { mode: 'mirror', x: 0.66, y: 0.54, radius: 0.23, stretch: 1.12 },
+  'circular-ruins': { mode: 'ember', x: 0.66, y: 0.68, radius: 0.24, stretch: 1.1 },
+  aleph: { mode: 'aleph', x: 0.814, y: 0.506, radius: 0.27, stretch: 1.18 },
+  'book-of-sand': { mode: 'sand', x: 0.66, y: 0.58, radius: 0.28, stretch: 1.16 },
+  'method-archive': { mode: 'method', x: 0.58, y: 0.54, radius: 0.24, stretch: 1.16 },
 }
 const audioConstellationNodes = Array.from({ length: 112 }, (_, index) => ({
   angle: (index / 112) * Math.PI * 2,
@@ -165,6 +181,36 @@ const alephParticles = Array.from({ length: 12 }, (_, index) => {
     index,
   }
 })
+
+function mapPercentToViewport(width: number, height: number, x: number, y: number) {
+  const imageRatio = 21 / 9
+  let imageWidth = width
+  let imageHeight = imageWidth / imageRatio
+
+  if (imageHeight < height) {
+    imageHeight = height
+    imageWidth = imageHeight * imageRatio
+  }
+
+  return {
+    x: (width - imageWidth) / 2 + (x / 100) * imageWidth,
+    y: (height - imageHeight) / 2 + (y / 100) * imageHeight,
+  }
+}
+
+function quadPoint(
+  start: { x: number; y: number },
+  control: { x: number; y: number },
+  end: { x: number; y: number },
+  progress: number,
+) {
+  const inverse = 1 - progress
+
+  return {
+    x: inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x,
+    y: inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y,
+  }
+}
 
 function getInitialChapterId() {
   if (typeof window === 'undefined') return chapters[0].id
@@ -536,6 +582,7 @@ function App() {
   const musicVisualizerCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const musicVisualizerSizeRef = useRef({ width: 0, height: 0 })
   const musicEnabledRef = useRef(false)
+  const audioUnlockedRef = useRef(false)
   const activeIdRef = useRef(activeId)
 
   const activeChapter = useMemo(
@@ -709,6 +756,187 @@ function App() {
       context.stroke()
     }
 
+    const drawThematicVisualizer = (
+      profile: AudioVisualizerProfile,
+      context: CanvasRenderingContext2D,
+      width: number,
+      height: number,
+      time: number,
+      low: number,
+      mid: number,
+      high: number,
+      energy: number,
+      isMusicLive: boolean,
+      idlePulse: number,
+    ) => {
+      const themeAlpha = isMusicLive ? 0.42 + energy * 0.34 : 0.22 + idlePulse * 0.12
+      const mapPoint = (x: number, y: number) => mapPercentToViewport(width, height, x, y)
+      const drawGlowDot = (x: number, y: number, size: number, alpha: number, blur = 8) => {
+        context.beginPath()
+        context.arc(x, y, size, 0, Math.PI * 2)
+        context.fillStyle = `rgba(215, 183, 100, ${alpha})`
+        context.shadowColor = 'rgba(215, 183, 100, 0.56)'
+        context.shadowBlur = blur
+        context.fill()
+        context.shadowBlur = 0
+      }
+      const drawFaintNetwork = (nodes: Array<{ x: number; y: number }>, offset = 0) => {
+        nodes.forEach((node, index) => {
+          const next = nodes[(index + 1) % nodes.length]
+          const start = mapPoint(node.x, node.y)
+          const end = mapPoint(next.x, next.y)
+          const pulse = (Math.sin(time * 0.001 + index * 1.4 + offset) + 1) * 0.5
+
+          context.beginPath()
+          context.moveTo(start.x, start.y)
+          context.lineTo(end.x, end.y)
+          context.strokeStyle = `rgba(215, 183, 100, ${0.028 + themeAlpha * 0.1})`
+          context.lineWidth = 0.42 + mid * 0.5
+          context.stroke()
+
+          drawGlowDot(
+            start.x + (end.x - start.x) * pulse,
+            start.y + (end.y - start.y) * pulse,
+            1.1 + energy * 1.8,
+            0.12 + themeAlpha * 0.38,
+            5 + high * 12,
+          )
+        })
+      }
+
+      context.save()
+      context.globalCompositeOperation = 'lighter'
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+
+      if (profile.mode === 'fork') {
+        const start = mapPoint(58.5, 64)
+        const branches = [
+          { end: mapPoint(48, 14), bend: mapPoint(53, 36) },
+          { end: mapPoint(84, 28), bend: mapPoint(73, 43) },
+          { end: mapPoint(40, 58), bend: mapPoint(48, 61) },
+          { end: mapPoint(72, 44), bend: mapPoint(67, 52) },
+          { end: mapPoint(75, 82), bend: mapPoint(66, 72) },
+        ]
+
+        branches.forEach((branch, index) => {
+          context.beginPath()
+          context.moveTo(start.x, start.y)
+          context.quadraticCurveTo(branch.bend.x, branch.bend.y, branch.end.x, branch.end.y)
+          context.strokeStyle = `rgba(215, 183, 100, ${0.035 + themeAlpha * 0.12})`
+          context.lineWidth = 0.7 + low * 1.1
+          context.stroke()
+
+          for (let bead = 0; bead < 2; bead += 1) {
+            const progress = (time * (0.00008 + index * 0.000006) + index * 0.18 + bead * 0.48) % 1
+            const point = quadPoint(start, branch.bend, branch.end, progress)
+            drawGlowDot(point.x, point.y, 1.3 + mid * 2.8, 0.12 + themeAlpha * 0.52, 8 + energy * 18)
+          }
+        })
+        drawGlowDot(start.x, start.y, 2.4 + low * 3.6, 0.16 + themeAlpha * 0.52, 14 + energy * 18)
+      } else if (profile.mode === 'sand') {
+        const origin = mapPoint(66, 72)
+        for (let index = 0; index < 148; index += 1) {
+          const phase = (time * (0.000035 + (index % 7) * 0.000004) + index * 0.137) % 1
+          const spread = Math.sin(index * 12.9898) * 310
+          const lift = 130 + (index % 9) * 18 + mid * 90
+          const x = origin.x + spread * (0.35 + phase * 0.72) + Math.sin(time * 0.0007 + index) * 10
+          const y = origin.y - phase * lift + Math.cos(index * 2.31) * 18
+          const length = 3 + high * 16 + (index % 5)
+          const angle = -0.45 + Math.sin(index * 0.73) * 0.48
+          const alpha = (1 - phase) * (0.065 + themeAlpha * 0.34)
+
+          context.beginPath()
+          context.moveTo(x, y)
+          context.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length)
+          context.strokeStyle = `rgba(232, 220, 197, ${alpha})`
+          context.lineWidth = 0.42 + energy * 0.55
+          context.stroke()
+        }
+      } else if (profile.mode === 'mirror') {
+        const axis = mapPoint(63, 54)
+        context.beginPath()
+        context.moveTo(axis.x, height * 0.2)
+        context.lineTo(axis.x, height * 0.82)
+        context.strokeStyle = `rgba(215, 183, 100, ${0.025 + themeAlpha * 0.08})`
+        context.lineWidth = 0.56
+        context.stroke()
+
+        for (let index = 0; index < 64; index += 1) {
+          const phase = (time * (0.00004 + (index % 5) * 0.000006) + index * 0.21) % 1
+          const baseY = height * (0.28 + ((index * 37) % 46) / 100)
+          const distance = 42 + ((index * 53) % 280) * (0.6 + mid * 0.35)
+          const shimmer = Math.sin(time * 0.001 + index) * (4 + high * 12)
+          const alpha = 0.04 + themeAlpha * 0.2 * (0.45 + phase)
+          const leftX = axis.x - distance + shimmer
+          const rightX = axis.x + distance - shimmer
+
+          context.beginPath()
+          context.moveTo(leftX - 9, baseY)
+          context.lineTo(leftX + 9 + high * 16, baseY + 1.5)
+          context.moveTo(rightX + 9, baseY)
+          context.lineTo(rightX - 9 - high * 16, baseY + 1.5)
+          context.strokeStyle = `rgba(232, 220, 197, ${alpha})`
+          context.lineWidth = 0.42 + energy * 0.5
+          context.stroke()
+        }
+      } else if (profile.mode === 'ember') {
+        const origin = mapPoint(70, 70)
+        for (let index = 0; index < 92; index += 1) {
+          const phase = (time * (0.000046 + (index % 6) * 0.000006) + index * 0.173) % 1
+          const sway = Math.sin(time * 0.001 + index * 1.7) * (18 + mid * 32)
+          const x = origin.x + Math.sin(index * 4.37) * 180 * (0.3 + phase * 0.45) + sway
+          const y = origin.y - phase * (210 + high * 120)
+          const alpha = (1 - phase) * (0.08 + themeAlpha * 0.38)
+          drawGlowDot(x, y, 0.8 + low * 3.2 + (index % 3) * 0.35, alpha, 6 + energy * 18)
+        }
+      } else if (profile.mode === 'city') {
+        drawFaintNetwork(
+          [
+            { x: 24, y: 58 },
+            { x: 38, y: 45 },
+            { x: 55, y: 52 },
+            { x: 70, y: 43 },
+            { x: 78, y: 63 },
+            { x: 50, y: 70 },
+          ],
+          0.6,
+        )
+      } else if (profile.mode === 'library') {
+        drawFaintNetwork(
+          [
+            { x: 36, y: 37 },
+            { x: 49, y: 50 },
+            { x: 62, y: 41 },
+            { x: 70, y: 58 },
+            { x: 52, y: 67 },
+            { x: 42, y: 58 },
+          ],
+          1.2,
+        )
+      } else if (profile.mode === 'archive' || profile.mode === 'method') {
+        const anchors =
+          profile.mode === 'archive'
+            ? [
+                { x: 30, y: 32 },
+                { x: 49, y: 49 },
+                { x: 74, y: 28 },
+                { x: 66, y: 68 },
+                { x: 42, y: 72 },
+              ]
+            : [
+                { x: 38, y: 44 },
+                { x: 60, y: 57 },
+                { x: 70, y: 38 },
+                { x: 82, y: 70 },
+                { x: 52, y: 72 },
+              ]
+        drawFaintNetwork(anchors, profile.mode === 'archive' ? 1.8 : 2.4)
+      }
+
+      context.restore()
+    }
+
     const tick = (time: number) => {
       const analyserNode = musicAnalyserRef.current
       const currentCanvas = musicVisualizerCanvasRef.current
@@ -741,12 +969,31 @@ function App() {
       const energy = Math.min(1, (isMusicLive ? 0.16 : 0.06) + low * 0.48 + mid * 0.44 + high * 0.24)
       context.clearRect(0, 0, width, height)
 
-      if (activeIdRef.current !== audioVisualizerChapterId) {
+      const activeVisualizerProfile = audioVisualizerProfiles[activeIdRef.current]
+      if (!activeVisualizerProfile) {
         musicVisualizerFrameRef.current = window.requestAnimationFrame(tick)
         return
       }
 
-      const focus = audioFocusByChapter[audioVisualizerChapterId]
+      if (activeVisualizerProfile.mode !== 'aleph') {
+        drawThematicVisualizer(
+          activeVisualizerProfile,
+          context,
+          width,
+          height,
+          time,
+          low,
+          mid,
+          high,
+          energy,
+          isMusicLive,
+          idlePulse,
+        )
+        musicVisualizerFrameRef.current = window.requestAnimationFrame(tick)
+        return
+      }
+
+      const focus = activeVisualizerProfile
       const cx = width * focus.x
       const cy = height * focus.y
       const baseRadius = Math.min(width, height) * focus.radius * (isMusicLive ? 0.9 : 0.82)
@@ -1115,6 +1362,8 @@ function App() {
   }
 
   function playSound(cue: SoundCue) {
+    if (!audioUnlockedRef.current) return
+
     switch (cue) {
       case 'toggle-on':
         playNoiseTick({ frequency: 3200, q: 4.6, gain: 0.09, duration: 0.038 })
@@ -1164,6 +1413,8 @@ function App() {
   }
 
   function toggleMusic() {
+    audioUnlockedRef.current = true
+
     if (isMusicEnabled) {
       playSound('toggle-off')
       setIsMusicEnabled(false)
@@ -1201,6 +1452,7 @@ function App() {
   function activateChapter(id: string) {
     if (id === activeId || !chapters.some((chapter) => chapter.id === id)) return
 
+    audioUnlockedRef.current = true
     playSound('chapter')
 
     if (swapTimerRef.current) window.clearTimeout(swapTimerRef.current)
@@ -1233,6 +1485,7 @@ function App() {
     const currentGuideKey = getGuideKey(guide)
     const nextGuideKey = getGuideKey(nextGuide)
 
+    audioUnlockedRef.current = true
     playSound('thought-open')
     clearGuideTimers()
     setActiveThoughtPromptId(null)
@@ -1264,6 +1517,7 @@ function App() {
   function closeGuide() {
     if (!guide) return
 
+    audioUnlockedRef.current = true
     playSound('thought-close')
     clearGuideTimers()
     setThoughtSwapPhase('closing')
@@ -1277,6 +1531,7 @@ function App() {
   function selectThoughtPrompt(promptId: string | null) {
     if (promptId === activeThoughtPromptId) return
 
+    audioUnlockedRef.current = true
     playSound('prompt')
     clearGuideTimers()
     setThoughtSwapPhase('out')
@@ -1288,6 +1543,7 @@ function App() {
   }
 
   function chooseBranch(choiceId: string, targetId: string) {
+    audioUnlockedRef.current = true
     playSound('branch')
     setReadingPath(choiceId)
     window.setTimeout(() => activateChapter(targetId), 320)
@@ -1300,12 +1556,14 @@ function App() {
   function collectCurrentThought() {
     if (!guide) return
 
+    audioUnlockedRef.current = true
     playSound('collect')
     const key = `${guide.chapter.id}:${guide.hotspot.id}`
     setCollectedIds((current) => (current.includes(key) ? current : [...current, key]))
   }
 
   function toggleEvidence() {
+    audioUnlockedRef.current = true
     playSound('evidence')
     setIsEvidenceOpen((current) => !current)
   }
@@ -1327,6 +1585,7 @@ function App() {
   const currentThoughtEvidence = currentThought?.evidence ?? guide?.hotspot.source ?? ''
   const currentGuideKey = getGuideKey(guide)
   const currentThoughtLineKey = `${currentGuideKey}:${activeThoughtPromptId ?? 'opening'}`
+  const activeVisualizerProfile = audioVisualizerProfiles[activeId]
 
   function playTypingCharacter(index: number, character: string) {
     if (!character.trim()) return
@@ -1523,7 +1782,9 @@ function App() {
           })}
         </div>
         <canvas
-          className={`music-visualizer-canvas ${activeId === audioVisualizerChapterId ? 'is-visible' : ''} ${
+          className={`music-visualizer-canvas ${activeVisualizerProfile ? 'is-visible' : ''} ${
+            activeId === audioVisualizerChapterId ? 'is-aleph' : ''
+          } ${
             isMusicEnabled ? 'is-on' : ''
           }`}
           ref={musicVisualizerCanvasRef}

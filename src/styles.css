@@ -216,10 +216,18 @@ button {
 }
 
 .music-visualizer-canvas.is-visible {
-  opacity: 0.84;
+  opacity: 0.58;
 }
 
 .music-visualizer-canvas.is-visible.is-on {
+  opacity: 0.74;
+}
+
+.music-visualizer-canvas.is-visible.is-aleph {
+  opacity: 0.84;
+}
+
+.music-visualizer-canvas.is-visible.is-aleph.is-on {
   opacity: 0.94;
 }
 
@@ -320,6 +328,17 @@ button {
   opacity: 1;
   transition-duration: 1160ms;
   transition-delay: 520ms;
+}
+
+.app-shell .story-section:not(.is-active) .semantic-actor-layer,
+.app-shell .story-section:not(.is-active) .hotspot-layer,
+.app-shell .story-section:not(.is-active) .branch-panel,
+.app-shell .story-section:not(.is-active) .collection-panel,
+.app-shell .story-section:not(.is-active) .source-wall {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
 }
 
 .app-shell.transition-settling .chapter-rail {
@@ -1935,7 +1954,7 @@ button {
   gap: 8px;
   min-height: 178px;
   align-content: start;
-  padding: 19px 19px 17px 34px;
+  padding: 19px 19px 17px 42px;
   animation: thoughtBodyIn 780ms cubic-bezier(0.16, 1, 0.3, 1) 260ms both;
   transition:
     opacity 420ms ease,
