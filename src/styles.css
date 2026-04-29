@@ -122,7 +122,6 @@ button {
   box-shadow:
     inset 0 0 96px rgba(5, 6, 9, 0.68),
     inset 0 0 180px rgba(5, 6, 9, 0.34);
-  backdrop-filter: blur(6px) brightness(0.8);
   -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 0 42%, rgba(0, 0, 0, 0.55) 60%, #000 100%);
   mask-image: radial-gradient(ellipse at 50% 50%, transparent 0 42%, rgba(0, 0, 0, 0.55) 60%, #000 100%);
   transition: opacity 760ms ease;
@@ -177,30 +176,24 @@ button {
   transform-origin: var(--map-origin-x, 0) var(--map-origin-y, 0);
   transition:
     transform 820ms var(--ease-map),
-    transform-origin 820ms var(--ease-map),
-    filter 820ms ease;
+    transform-origin 820ms var(--ease-map);
   will-change: transform;
 }
 
 .app-shell.transition-fading .spatial-map {
-  filter: saturate(0.78) contrast(0.92) brightness(0.72) blur(0.8px);
   transition-duration: 640ms;
 }
 
 .app-shell.transition-traveling .spatial-map {
-  filter: saturate(0.7) contrast(0.9) brightness(0.62) blur(1.5px);
   transition:
     transform 1780ms var(--ease-map),
-    transform-origin 1780ms var(--ease-map),
-    filter 1040ms ease;
+    transform-origin 1780ms var(--ease-map);
 }
 
 .app-shell.transition-settling .spatial-map {
-  filter: saturate(1.04) contrast(1.04) brightness(1) blur(0);
   transition:
     transform 1180ms var(--ease-archive),
-    transform-origin 1180ms var(--ease-archive),
-    filter 1180ms ease;
+    transform-origin 1180ms var(--ease-archive);
 }
 
 .music-visualizer-canvas {
@@ -210,13 +203,20 @@ button {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  visibility: hidden;
   opacity: 0;
   mix-blend-mode: screen;
-  transition: opacity 960ms ease;
+  transition:
+    opacity 960ms ease,
+    visibility 0s linear 960ms;
 }
 
 .music-visualizer-canvas.is-visible {
+  visibility: visible;
   opacity: 0.58;
+  transition:
+    opacity 960ms ease,
+    visibility 0s;
 }
 
 .music-visualizer-canvas.is-visible.is-on {
@@ -232,8 +232,13 @@ button {
 }
 
 .app-shell.transition-fading .music-visualizer-canvas,
-.app-shell.transition-traveling .music-visualizer-canvas {
+.app-shell.transition-traveling .music-visualizer-canvas,
+.app-shell.transition-settling .music-visualizer-canvas {
+  visibility: hidden;
   opacity: 0;
+  transition:
+    opacity 0ms linear,
+    visibility 0s;
 }
 
 .map-cell {

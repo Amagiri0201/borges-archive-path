@@ -61,7 +61,7 @@ const audioVisualizerProfiles: Record<string, AudioVisualizerProfile> = {
   'library-life': { mode: 'library', x: 0.53, y: 0.48, radius: 0.24, stretch: 1.25 },
   'forking-paths': { mode: 'fork', x: 0.58, y: 0.64, radius: 0.24, stretch: 1.2 },
   'mirror-dream': { mode: 'mirror', x: 0.66, y: 0.54, radius: 0.23, stretch: 1.12 },
-  'circular-ruins': { mode: 'ember', x: 0.66, y: 0.68, radius: 0.24, stretch: 1.1 },
+  'circular-ruins': { mode: 'ember', x: 0.59, y: 0.69, radius: 0.24, stretch: 1.1 },
   aleph: { mode: 'aleph', x: 0.814, y: 0.506, radius: 0.27, stretch: 1.18 },
   'book-of-sand': { mode: 'sand', x: 0.66, y: 0.58, radius: 0.28, stretch: 1.16 },
   'method-archive': { mode: 'method', x: 0.58, y: 0.54, radius: 0.24, stretch: 1.16 },
@@ -584,6 +584,7 @@ function App() {
   const musicEnabledRef = useRef(false)
   const audioUnlockedRef = useRef(false)
   const activeIdRef = useRef(activeId)
+  const transitionPhaseRef = useRef<TransitionPhase>(transitionPhase)
 
   const activeChapter = useMemo(
     () => chapters.find((chapter) => chapter.id === activeId) ?? chapters[0],
@@ -648,6 +649,10 @@ function App() {
     activeIdRef.current = activeId
   }, [activeId])
 
+  useEffect(() => {
+    transitionPhaseRef.current = transitionPhase
+  }, [transitionPhase])
+
   function ensureAudioGraph() {
     if (typeof window === 'undefined') return null
 
@@ -699,6 +704,14 @@ function App() {
       window.cancelAnimationFrame(musicVisualizerFrameRef.current)
       musicVisualizerFrameRef.current = null
     }
+  }
+
+  function clearMusicVisualizerCanvas() {
+    const canvas = musicVisualizerCanvasRef.current
+    if (!canvas) return
+
+    const context = canvas.getContext('2d')
+    context?.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   function startParticleMeter() {
@@ -881,14 +894,33 @@ function App() {
           context.stroke()
         }
       } else if (profile.mode === 'ember') {
-        const origin = mapPoint(70, 70)
-        for (let index = 0; index < 92; index += 1) {
-          const phase = (time * (0.000046 + (index % 6) * 0.000006) + index * 0.173) % 1
-          const sway = Math.sin(time * 0.001 + index * 1.7) * (18 + mid * 32)
-          const x = origin.x + Math.sin(index * 4.37) * 180 * (0.3 + phase * 0.45) + sway
-          const y = origin.y - phase * (210 + high * 120)
-          const alpha = (1 - phase) * (0.08 + themeAlpha * 0.38)
-          drawGlowDot(x, y, 0.8 + low * 3.2 + (index % 3) * 0.35, alpha, 6 + energy * 18)
+        const origin = mapPoint(profile.x * 100, profile.y * 100)
+
+        for (let index = 0; index < 184; index += 1) {
+          const phase = (time * (0.000034 + (index % 8) * 0.0000038) + index * 0.079) % 1
+          const curl = Math.sin(index * 2.71 + time * 0.00058) * (18 + mid * 24)
+          const narrowNoise = Math.sin(index * 7.83) * (18 + phase * 74)
+          const plumeLean = -phase * (112 + mid * 48)
+          const x = origin.x + plumeLean + curl + narrowNoise * (0.28 + phase * 0.36)
+          const y = origin.y - phase * (245 + high * 86) + Math.cos(index * 1.91) * (5 + phase * 16)
+          const length = 7 + phase * 18 + high * 18
+          const angle = -Math.PI / 2 + Math.sin(index * 1.63 + time * 0.00042) * 0.34 - phase * 0.12
+          const alpha = (1 - phase) * (0.022 + themeAlpha * 0.096)
+
+          context.beginPath()
+          context.moveTo(x, y)
+          context.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length)
+          context.strokeStyle = `rgba(232, 220, 197, ${alpha})`
+          context.lineWidth = 0.2 + energy * 0.26 + (index % 4) * 0.035
+          context.stroke()
+        }
+
+        for (let index = 0; index < 38; index += 1) {
+          const phase = (time * (0.00006 + (index % 5) * 0.000006) + index * 0.211) % 1
+          const x = origin.x + Math.sin(index * 6.19 + time * 0.0009) * (16 + phase * 34) - phase * 28
+          const y = origin.y - phase * (82 + high * 48) + Math.cos(index * 2.43) * 7
+          const alpha = (1 - phase) * (0.04 + themeAlpha * 0.16)
+          drawGlowDot(x, y, 0.34 + low * 0.74 + (index % 3) * 0.08, alpha, 3 + energy * 8)
         }
       } else if (profile.mode === 'city') {
         drawFaintNetwork(
@@ -949,6 +981,11 @@ function App() {
       const { width, height } = musicVisualizerSizeRef.current
       if (width <= 0 || height <= 0) {
         stopParticleMeter()
+        return
+      }
+      if (transitionPhaseRef.current !== 'idle') {
+        context.clearRect(0, 0, width, height)
+        musicVisualizerFrameRef.current = window.requestAnimationFrame(tick)
         return
       }
       if (musicEnabledRef.current && analyserNode) {
@@ -1464,19 +1501,26 @@ function App() {
     setActiveThoughtPromptId(null)
     setThoughtSwapPhase('idle')
     setTransitionPhase('fading')
+    transitionPhaseRef.current = 'fading'
+    stopParticleMeter()
+    clearMusicVisualizerCanvas()
 
     swapTimerRef.current = window.setTimeout(() => {
       setActiveId(id)
       window.history.replaceState(null, '', `#${id}`)
       setTransitionPhase('traveling')
+      transitionPhaseRef.current = 'traveling'
     }, fadeDuration)
 
     settleTimerRef.current = window.setTimeout(() => {
       setTransitionPhase('settling')
+      transitionPhaseRef.current = 'settling'
     }, fadeDuration + travelDuration)
 
     idleTimerRef.current = window.setTimeout(() => {
       setTransitionPhase('idle')
+      transitionPhaseRef.current = 'idle'
+      startParticleMeter()
     }, fadeDuration + travelDuration + settleDuration)
   }
 
@@ -1586,6 +1630,7 @@ function App() {
   const currentGuideKey = getGuideKey(guide)
   const currentThoughtLineKey = `${currentGuideKey}:${activeThoughtPromptId ?? 'opening'}`
   const activeVisualizerProfile = audioVisualizerProfiles[activeId]
+  const isVisualizerReady = transitionPhase === 'idle'
 
   function playTypingCharacter(index: number, character: string) {
     if (!character.trim()) return
@@ -1782,7 +1827,9 @@ function App() {
           })}
         </div>
         <canvas
-          className={`music-visualizer-canvas ${activeVisualizerProfile ? 'is-visible' : ''} ${
+          className={`music-visualizer-canvas ${
+            activeVisualizerProfile && isVisualizerReady ? 'is-visible' : ''
+          } ${
             activeId === audioVisualizerChapterId ? 'is-aleph' : ''
           } ${
             isMusicEnabled ? 'is-on' : ''
