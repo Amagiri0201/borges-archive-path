@@ -61,7 +61,7 @@ const audioVisualizerProfiles: Record<string, AudioVisualizerProfile> = {
   'library-life': { mode: 'library', x: 0.53, y: 0.48, radius: 0.24, stretch: 1.25 },
   'forking-paths': { mode: 'fork', x: 0.58, y: 0.64, radius: 0.24, stretch: 1.2 },
   'mirror-dream': { mode: 'mirror', x: 0.66, y: 0.54, radius: 0.23, stretch: 1.12 },
-  'circular-ruins': { mode: 'ember', x: 0.59, y: 0.69, radius: 0.24, stretch: 1.1 },
+  'circular-ruins': { mode: 'ember', x: 0.575, y: 0.67, radius: 0.24, stretch: 1.1 },
   aleph: { mode: 'aleph', x: 0.814, y: 0.506, radius: 0.27, stretch: 1.18 },
   'book-of-sand': { mode: 'sand', x: 0.66, y: 0.58, radius: 0.28, stretch: 1.16 },
   'method-archive': { mode: 'method', x: 0.58, y: 0.54, radius: 0.24, stretch: 1.16 },
@@ -574,6 +574,7 @@ function App() {
   const guideIdleTimerRef = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioMasterRef = useRef<GainNode | null>(null)
+  const audioSfxGainRef = useRef<GainNode | null>(null)
   const ambientNodesRef = useRef<AmbientNodes | null>(null)
   const musicElementRef = useRef<HTMLAudioElement | null>(null)
   const musicSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
@@ -661,11 +662,15 @@ function App() {
       if (!context) return null
 
       const master = context.createGain()
+      const sfx = context.createGain()
       master.gain.setValueAtTime(0.96, context.currentTime)
+      sfx.gain.setValueAtTime(1.42, context.currentTime)
+      sfx.connect(master)
       master.connect(context.destination)
 
       audioContextRef.current = context
       audioMasterRef.current = master
+      audioSfxGainRef.current = sfx
     }
 
     if (audioContextRef.current.state === 'suspended') {
@@ -896,7 +901,30 @@ function App() {
       } else if (profile.mode === 'ember') {
         const origin = mapPoint(profile.x * 100, profile.y * 100)
 
-        for (let index = 0; index < 184; index += 1) {
+        for (let ribbon = 0; ribbon < 7; ribbon += 1) {
+          const drift = Math.sin(time * 0.00048 + ribbon * 1.37)
+          const lift = 88 + ribbon * 21 + mid * 54
+          const spread = 38 + ribbon * 16
+
+          context.beginPath()
+          context.moveTo(origin.x + (ribbon - 3) * 8, origin.y + 12 + ribbon * 2)
+          context.bezierCurveTo(
+            origin.x - 24 - spread * 0.34 + drift * 18,
+            origin.y - lift * 0.34,
+            origin.x - 66 - spread * 0.48 - drift * 12,
+            origin.y - lift * 0.72,
+            origin.x - 86 - spread * 0.62 + drift * 20,
+            origin.y - lift,
+          )
+          context.strokeStyle = `rgba(232, 220, 197, ${0.035 + themeAlpha * 0.105})`
+          context.lineWidth = 6.5 + ribbon * 1.35 + low * 5
+          context.shadowColor = 'rgba(215, 183, 100, 0.16)'
+          context.shadowBlur = 8 + energy * 12
+          context.stroke()
+          context.shadowBlur = 0
+        }
+
+        for (let index = 0; index < 220; index += 1) {
           const phase = (time * (0.000034 + (index % 8) * 0.0000038) + index * 0.079) % 1
           const curl = Math.sin(index * 2.71 + time * 0.00058) * (18 + mid * 24)
           const narrowNoise = Math.sin(index * 7.83) * (18 + phase * 74)
@@ -905,22 +933,22 @@ function App() {
           const y = origin.y - phase * (245 + high * 86) + Math.cos(index * 1.91) * (5 + phase * 16)
           const length = 7 + phase * 18 + high * 18
           const angle = -Math.PI / 2 + Math.sin(index * 1.63 + time * 0.00042) * 0.34 - phase * 0.12
-          const alpha = (1 - phase) * (0.022 + themeAlpha * 0.096)
+          const alpha = (1 - phase) * (0.04 + themeAlpha * 0.18)
 
           context.beginPath()
           context.moveTo(x, y)
           context.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length)
           context.strokeStyle = `rgba(232, 220, 197, ${alpha})`
-          context.lineWidth = 0.2 + energy * 0.26 + (index % 4) * 0.035
+          context.lineWidth = 0.26 + energy * 0.34 + (index % 4) * 0.045
           context.stroke()
         }
 
-        for (let index = 0; index < 38; index += 1) {
+        for (let index = 0; index < 54; index += 1) {
           const phase = (time * (0.00006 + (index % 5) * 0.000006) + index * 0.211) % 1
           const x = origin.x + Math.sin(index * 6.19 + time * 0.0009) * (16 + phase * 34) - phase * 28
           const y = origin.y - phase * (82 + high * 48) + Math.cos(index * 2.43) * 7
-          const alpha = (1 - phase) * (0.04 + themeAlpha * 0.16)
-          drawGlowDot(x, y, 0.34 + low * 0.74 + (index % 3) * 0.08, alpha, 3 + energy * 8)
+          const alpha = (1 - phase) * (0.055 + themeAlpha * 0.22)
+          drawGlowDot(x, y, 0.42 + low * 0.86 + (index % 3) * 0.1, alpha, 4 + energy * 10)
         }
       } else if (profile.mode === 'city') {
         drawFaintNetwork(
@@ -1307,6 +1335,10 @@ function App() {
     void music.play().catch(fallbackToGenerated)
   }
 
+  function getSfxOutput() {
+    return audioSfxGainRef.current ?? audioMasterRef.current
+  }
+
   function playTone({
     frequency,
     duration,
@@ -1323,7 +1355,8 @@ function App() {
     endFrequency?: number
   }) {
     const context = ensureAudioGraph()
-    if (!context || !audioMasterRef.current) return
+    const output = getSfxOutput()
+    if (!context || !output) return
 
     const now = context.currentTime + delay
     const osc = context.createOscillator()
@@ -1344,7 +1377,7 @@ function App() {
 
     osc.connect(filter)
     filter.connect(toneGain)
-    toneGain.connect(audioMasterRef.current)
+    toneGain.connect(output)
     osc.start(now)
     osc.stop(now + duration + 0.04)
   }
@@ -1365,7 +1398,8 @@ function App() {
     filterType?: BiquadFilterType
   }) {
     const context = ensureAudioGraph()
-    if (!context || !audioMasterRef.current) return
+    const output = getSfxOutput()
+    if (!context || !output) return
 
     const now = context.currentTime + delay
     const length = Math.max(1, Math.floor(context.sampleRate * duration))
@@ -1393,7 +1427,7 @@ function App() {
 
     source.connect(filter)
     filter.connect(tickGain)
-    tickGain.connect(audioMasterRef.current)
+    tickGain.connect(output)
     source.start(now)
     source.stop(now + duration + 0.02)
   }
@@ -1411,40 +1445,40 @@ function App() {
         playTone({ frequency: 210, endFrequency: 120, duration: 0.2, delay: 0.018, gain: 0.044, type: 'triangle' })
         break
       case 'chapter':
-        playTone({ frequency: 74, endFrequency: 48, duration: 0.68, gain: 0.12, type: 'sine' })
-        playNoiseTick({ frequency: 820, q: 0.9, gain: 0.062, duration: 0.18, delay: 0.08, filterType: 'lowpass' })
-        playNoiseTick({ frequency: 2500, q: 2.6, gain: 0.042, duration: 0.055, delay: 0.22 })
+        playTone({ frequency: 74, endFrequency: 48, duration: 0.68, gain: 0.14, type: 'sine' })
+        playNoiseTick({ frequency: 820, q: 0.9, gain: 0.078, duration: 0.18, delay: 0.08, filterType: 'lowpass' })
+        playNoiseTick({ frequency: 2500, q: 2.6, gain: 0.058, duration: 0.055, delay: 0.22 })
         break
       case 'thought-open':
-        playNoiseTick({ frequency: 3400, q: 5.2, gain: 0.085, duration: 0.044 })
-        playNoiseTick({ frequency: 1700, q: 2.4, gain: 0.046, duration: 0.06, delay: 0.055 })
-        playTone({ frequency: 233, duration: 0.16, delay: 0.03, gain: 0.032, type: 'triangle' })
+        playNoiseTick({ frequency: 3400, q: 5.2, gain: 0.108, duration: 0.044 })
+        playNoiseTick({ frequency: 1700, q: 2.4, gain: 0.062, duration: 0.06, delay: 0.055 })
+        playTone({ frequency: 233, duration: 0.16, delay: 0.03, gain: 0.044, type: 'triangle' })
         break
       case 'thought-close':
-        playNoiseTick({ frequency: 1900, q: 3.8, gain: 0.068, duration: 0.05 })
-        playTone({ frequency: 260, endFrequency: 150, duration: 0.2, delay: 0.02, gain: 0.034, type: 'triangle' })
+        playNoiseTick({ frequency: 1900, q: 3.8, gain: 0.088, duration: 0.05 })
+        playTone({ frequency: 260, endFrequency: 150, duration: 0.2, delay: 0.02, gain: 0.046, type: 'triangle' })
         break
       case 'prompt':
-        playNoiseTick({ frequency: 3600, q: 5.8, gain: 0.078, duration: 0.032 })
-        playNoiseTick({ frequency: 2500, q: 4.4, gain: 0.05, duration: 0.03, delay: 0.055 })
+        playNoiseTick({ frequency: 3600, q: 5.8, gain: 0.104, duration: 0.032 })
+        playNoiseTick({ frequency: 2500, q: 4.4, gain: 0.066, duration: 0.03, delay: 0.055 })
         break
       case 'branch':
-        playNoiseTick({ frequency: 3000, q: 4.2, gain: 0.078, duration: 0.038 })
-        playNoiseTick({ frequency: 1200, q: 1.8, gain: 0.052, duration: 0.07, delay: 0.07 })
-        playTone({ frequency: 196, duration: 0.12, delay: 0.035, gain: 0.03, type: 'triangle' })
+        playNoiseTick({ frequency: 3000, q: 4.2, gain: 0.102, duration: 0.038 })
+        playNoiseTick({ frequency: 1200, q: 1.8, gain: 0.07, duration: 0.07, delay: 0.07 })
+        playTone({ frequency: 196, duration: 0.12, delay: 0.035, gain: 0.042, type: 'triangle' })
         break
       case 'collect':
-        playNoiseTick({ frequency: 4100, q: 6.4, gain: 0.074, duration: 0.028 })
-        playNoiseTick({ frequency: 3150, q: 5.2, gain: 0.052, duration: 0.026, delay: 0.052 })
-        playTone({ frequency: 520, duration: 0.08, delay: 0.035, gain: 0.026, type: 'triangle' })
+        playNoiseTick({ frequency: 4100, q: 6.4, gain: 0.1, duration: 0.028 })
+        playNoiseTick({ frequency: 3150, q: 5.2, gain: 0.068, duration: 0.026, delay: 0.052 })
+        playTone({ frequency: 520, duration: 0.08, delay: 0.035, gain: 0.036, type: 'triangle' })
         break
       case 'evidence':
-        playNoiseTick({ frequency: 2300, q: 3.2, gain: 0.076, duration: 0.05 })
-        playNoiseTick({ frequency: 780, q: 1.1, gain: 0.038, duration: 0.09, delay: 0.035, filterType: 'lowpass' })
+        playNoiseTick({ frequency: 2300, q: 3.2, gain: 0.102, duration: 0.05 })
+        playNoiseTick({ frequency: 780, q: 1.1, gain: 0.054, duration: 0.09, delay: 0.035, filterType: 'lowpass' })
         break
       case 'typing':
-        playNoiseTick({ frequency: 3900, q: 7.2, gain: 0.048, duration: 0.022 })
-        playNoiseTick({ frequency: 1450, q: 2.6, gain: 0.022, duration: 0.028, delay: 0.01 })
+        playNoiseTick({ frequency: 3900, q: 7.2, gain: 0.06, duration: 0.022 })
+        playNoiseTick({ frequency: 1450, q: 2.6, gain: 0.032, duration: 0.028, delay: 0.01 })
         break
     }
   }
@@ -1831,6 +1865,8 @@ function App() {
             activeVisualizerProfile && isVisualizerReady ? 'is-visible' : ''
           } ${
             activeId === audioVisualizerChapterId ? 'is-aleph' : ''
+          } ${
+            activeVisualizerProfile?.mode === 'ember' ? 'is-ember' : ''
           } ${
             isMusicEnabled ? 'is-on' : ''
           }`}

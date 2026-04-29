@@ -223,6 +223,14 @@ button {
   opacity: 0.74;
 }
 
+.music-visualizer-canvas.is-visible.is-ember {
+  opacity: 0.76;
+}
+
+.music-visualizer-canvas.is-visible.is-ember.is-on {
+  opacity: 0.86;
+}
+
 .music-visualizer-canvas.is-visible.is-aleph {
   opacity: 0.84;
 }
