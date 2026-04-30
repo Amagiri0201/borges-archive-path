@@ -55,13 +55,27 @@ type AudioVisualizerProfile = {
   radius: number
   stretch: number
 }
+
+type BorgesArchivePathBridge = {
+  goToChapter: (chapter: string | number) => boolean
+  next: () => void
+  previous: () => void
+  getState: () => { activeId: string; activeIndex: number; chapters: Array<{ id: string; index: string; title: string }> }
+}
+
+declare global {
+  interface Window {
+    BorgesArchivePath?: BorgesArchivePathBridge
+  }
+}
+
 const audioVisualizerProfiles: Record<string, AudioVisualizerProfile> = {
   'archive-entry': { mode: 'archive', x: 0.5, y: 0.5, radius: 0.2, stretch: 1.1 },
   'city-memory': { mode: 'city', x: 0.58, y: 0.56, radius: 0.24, stretch: 1.2 },
   'library-life': { mode: 'library', x: 0.53, y: 0.48, radius: 0.24, stretch: 1.25 },
   'forking-paths': { mode: 'fork', x: 0.58, y: 0.64, radius: 0.24, stretch: 1.2 },
   'mirror-dream': { mode: 'mirror', x: 0.66, y: 0.54, radius: 0.23, stretch: 1.12 },
-  'circular-ruins': { mode: 'ember', x: 0.575, y: 0.67, radius: 0.24, stretch: 1.1 },
+  'circular-ruins': { mode: 'ember', x: 0.684, y: 0.666, radius: 0.27, stretch: 1.14 },
   aleph: { mode: 'aleph', x: 0.814, y: 0.506, radius: 0.27, stretch: 1.18 },
   'book-of-sand': { mode: 'sand', x: 0.66, y: 0.58, radius: 0.28, stretch: 1.16 },
   'method-archive': { mode: 'method', x: 0.58, y: 0.54, radius: 0.24, stretch: 1.16 },
@@ -257,6 +271,37 @@ function getGuideKey(guide: GuideState) {
 
 function getThoughtPromptLabel(chapterId: string, prompt: ThoughtPrompt) {
   return thoughtPromptLabelsByChapter[chapterId]?.[prompt.id] ?? prompt.label
+}
+
+function resolveExternalChapterId(input: string | number | null | undefined) {
+  if (input === null || input === undefined) return null
+
+  const raw = String(input).trim()
+  if (!raw) return null
+
+  const normalizedIndex = /^\d+$/.test(raw) ? raw.padStart(2, '0') : raw
+  const directMatch = chapters.find(
+    (chapter) => chapter.id === raw || chapter.index === raw || chapter.index === normalizedIndex || chapter.title === raw,
+  )
+  if (directMatch) return directMatch.id
+
+  if (/^\d+$/.test(raw)) {
+    const numeric = Number(raw)
+    if (numeric >= 0 && numeric < chapters.length) return chapters[numeric].id
+    if (numeric === chapters.length) return chapters[chapters.length - 1].id
+  }
+
+  return null
+}
+
+function getExternalChapterInput(detail: unknown) {
+  if (typeof detail === 'string' || typeof detail === 'number') return detail
+  if (!detail || typeof detail !== 'object') return null
+
+  const payload = detail as { chapter?: unknown; id?: unknown; index?: unknown; page?: unknown }
+  const value = payload.chapter ?? payload.id ?? payload.index ?? payload.page
+
+  return typeof value === 'string' || typeof value === 'number' ? value : null
 }
 
 function getBrowserAudioContext() {
@@ -900,55 +945,58 @@ function App() {
         }
       } else if (profile.mode === 'ember') {
         const origin = mapPoint(profile.x * 100, profile.y * 100)
+        const musicLift = isMusicLive ? 1.22 + low * 1.35 + mid * 0.62 : 0.86 + idlePulse * 0.16
+        const emberAlpha = isMusicLive ? 0.072 + low * 0.16 + mid * 0.08 : 0.072 + idlePulse * 0.034
 
-        for (let ribbon = 0; ribbon < 7; ribbon += 1) {
-          const drift = Math.sin(time * 0.00048 + ribbon * 1.37)
-          const lift = 88 + ribbon * 21 + mid * 54
-          const spread = 38 + ribbon * 16
+        const baseGlow = context.createRadialGradient(origin.x, origin.y, 0, origin.x, origin.y, 150 + low * 105)
+        baseGlow.addColorStop(0, `rgba(206, 152, 55, ${emberAlpha})`)
+        baseGlow.addColorStop(0.34, `rgba(130, 86, 36, ${0.05 + themeAlpha * 0.06})`)
+        baseGlow.addColorStop(0.72, `rgba(74, 58, 38, ${0.018 + themeAlpha * 0.022})`)
+        baseGlow.addColorStop(1, 'rgba(24, 20, 16, 0)')
+        context.fillStyle = baseGlow
+        context.fillRect(origin.x - 230, origin.y - 220, 460, 330)
+
+        for (let index = 0; index < 72; index += 1) {
+          const phase = (time * (0.00002 * musicLift + (index % 6) * 0.0000024) + index * 0.137) % 1
+          const spread = 24 + phase * (88 + mid * 44)
+          const x = origin.x + Math.sin(index * 4.91 + time * 0.00026) * spread * 0.58
+          const y = origin.y - phase * (164 + mid * 70) * musicLift + Math.cos(index * 3.17) * 12
+          const radius = 7 + phase * 21 + low * (isMusicLive ? 12 : 5)
+          const alpha = (1 - phase) * (isMusicLive ? 0.038 + themeAlpha * 0.092 : 0.04 + themeAlpha * 0.074)
 
           context.beginPath()
-          context.moveTo(origin.x + (ribbon - 3) * 8, origin.y + 12 + ribbon * 2)
-          context.bezierCurveTo(
-            origin.x - 24 - spread * 0.34 + drift * 18,
-            origin.y - lift * 0.34,
-            origin.x - 66 - spread * 0.48 - drift * 12,
-            origin.y - lift * 0.72,
-            origin.x - 86 - spread * 0.62 + drift * 20,
-            origin.y - lift,
-          )
-          context.strokeStyle = `rgba(232, 220, 197, ${0.035 + themeAlpha * 0.105})`
-          context.lineWidth = 6.5 + ribbon * 1.35 + low * 5
-          context.shadowColor = 'rgba(215, 183, 100, 0.16)'
-          context.shadowBlur = 8 + energy * 12
-          context.stroke()
+          context.arc(x, y, radius, 0, Math.PI * 2)
+          context.fillStyle = `rgba(170, 125, 59, ${alpha})`
+          context.shadowColor = 'rgba(187, 133, 48, 0.34)'
+          context.shadowBlur = 12 + energy * 14
+          context.fill()
           context.shadowBlur = 0
         }
 
-        for (let index = 0; index < 220; index += 1) {
-          const phase = (time * (0.000034 + (index % 8) * 0.0000038) + index * 0.079) % 1
-          const curl = Math.sin(index * 2.71 + time * 0.00058) * (18 + mid * 24)
-          const narrowNoise = Math.sin(index * 7.83) * (18 + phase * 74)
-          const plumeLean = -phase * (112 + mid * 48)
-          const x = origin.x + plumeLean + curl + narrowNoise * (0.28 + phase * 0.36)
-          const y = origin.y - phase * (245 + high * 86) + Math.cos(index * 1.91) * (5 + phase * 16)
-          const length = 7 + phase * 18 + high * 18
-          const angle = -Math.PI / 2 + Math.sin(index * 1.63 + time * 0.00042) * 0.34 - phase * 0.12
-          const alpha = (1 - phase) * (0.04 + themeAlpha * 0.18)
+        for (let index = 0; index < 430; index += 1) {
+          const phase = (time * (0.000032 * musicLift + (index % 8) * 0.0000032) + index * 0.071) % 1
+          const swirl = Math.sin(index * 2.71 + time * 0.00058) * (10 + phase * 52 + mid * 22)
+          const scatter = Math.sin(index * 7.83) * (8 + phase * 46)
+          const x = origin.x + swirl + scatter * 0.36 + Math.sin(time * 0.0002 + index) * phase * 22
+          const y = origin.y - phase * (220 + mid * 90) * musicLift + Math.cos(index * 1.91) * (5 + phase * 18)
+          const alpha = (1 - phase) * (isMusicLive ? 0.045 + themeAlpha * 0.14 : 0.042 + themeAlpha * 0.112)
+          const size = 0.42 + phase * 1.28 + low * (isMusicLive ? 0.9 : 0.46) + (index % 5) * 0.05
 
           context.beginPath()
-          context.moveTo(x, y)
-          context.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length)
-          context.strokeStyle = `rgba(232, 220, 197, ${alpha})`
-          context.lineWidth = 0.26 + energy * 0.34 + (index % 4) * 0.045
-          context.stroke()
+          context.arc(x, y, size, 0, Math.PI * 2)
+          context.fillStyle = `rgba(218, 162, 63, ${alpha})`
+          context.shadowColor = 'rgba(190, 132, 42, 0.32)'
+          context.shadowBlur = 4 + energy * 9
+          context.fill()
+          context.shadowBlur = 0
         }
 
-        for (let index = 0; index < 54; index += 1) {
-          const phase = (time * (0.00006 + (index % 5) * 0.000006) + index * 0.211) % 1
-          const x = origin.x + Math.sin(index * 6.19 + time * 0.0009) * (16 + phase * 34) - phase * 28
-          const y = origin.y - phase * (82 + high * 48) + Math.cos(index * 2.43) * 7
-          const alpha = (1 - phase) * (0.055 + themeAlpha * 0.22)
-          drawGlowDot(x, y, 0.42 + low * 0.86 + (index % 3) * 0.1, alpha, 4 + energy * 10)
+        for (let index = 0; index < 64; index += 1) {
+          const phase = (time * (0.000064 * musicLift + (index % 5) * 0.0000045) + index * 0.211) % 1
+          const x = origin.x + Math.sin(index * 6.19 + time * 0.0009) * (18 + phase * 34)
+          const y = origin.y - phase * (76 + high * 44) * musicLift + Math.cos(index * 2.43) * 8
+          const alpha = (1 - phase) * (isMusicLive ? 0.065 + themeAlpha * 0.22 : 0.054 + themeAlpha * 0.17)
+          drawGlowDot(x, y, 0.44 + low * 0.92 + (index % 3) * 0.12, alpha, 4 + energy * 12)
         }
       } else if (profile.mode === 'city') {
         drawFaintNetwork(
@@ -1630,6 +1678,57 @@ function App() {
   function goNextChapter() {
     activateChapter(nextChapter.id)
   }
+
+  useEffect(() => {
+    const bridge: BorgesArchivePathBridge = {
+      goToChapter: (chapter) => {
+        const targetId = resolveExternalChapterId(chapter)
+        if (!targetId) return false
+
+        activateChapter(targetId)
+        return true
+      },
+      next: () => {
+        const currentIndex = Math.max(
+          chapters.findIndex((chapter) => chapter.id === activeIdRef.current),
+          0,
+        )
+        activateChapter(chapters[currentIndex + 1]?.id ?? chapters[0].id)
+      },
+      previous: () => {
+        const currentIndex = Math.max(
+          chapters.findIndex((chapter) => chapter.id === activeIdRef.current),
+          0,
+        )
+        activateChapter(chapters[currentIndex - 1]?.id ?? chapters[chapters.length - 1].id)
+      },
+      getState: () => ({
+        activeId: activeIdRef.current,
+        activeIndex: Math.max(
+          chapters.findIndex((chapter) => chapter.id === activeIdRef.current),
+          0,
+        ),
+        chapters: chapters.map((chapter) => ({
+          id: chapter.id,
+          index: chapter.index,
+          title: chapter.title,
+        })),
+      }),
+    }
+
+    const handleExternalChapter = (event: Event) => {
+      const input = getExternalChapterInput((event as CustomEvent).detail)
+      if (input !== null) bridge.goToChapter(input)
+    }
+
+    Reflect.set(window, 'BorgesArchivePath', bridge)
+    window.addEventListener('borges:chapter', handleExternalChapter)
+
+    return () => {
+      window.removeEventListener('borges:chapter', handleExternalChapter)
+      if (window.BorgesArchivePath === bridge) Reflect.deleteProperty(window, 'BorgesArchivePath')
+    }
+  })
 
   function collectCurrentThought() {
     if (!guide) return
